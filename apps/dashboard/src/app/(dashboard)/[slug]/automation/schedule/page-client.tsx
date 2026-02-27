@@ -3,6 +3,7 @@
 import {
   ArrowDown01Icon,
   ArrowUp01Icon,
+  ArrowUpDownIcon,
   Delete02Icon,
   Edit02Icon,
   MoreVerticalIcon,
@@ -99,9 +100,9 @@ export default function PageClient({ organizationSlug }: PageClientProps) {
   const [activeTab, setActiveTab] = useState<"active" | "paused">("active");
   const [deleteTriggerId, setDeleteTriggerId] = useState<string | null>(null);
   const [editTrigger, setEditTrigger] = useState<Trigger | null>(null);
-  const [createdSortOrder, setCreatedSortOrder] = useState<"asc" | "desc">(
-    "desc"
-  );
+  const [createdSortOrder, setCreatedSortOrder] = useState<
+    false | "asc" | "desc"
+  >(false);
 
   const { data, isPending } = useQuery<{
     triggers: Trigger[];
@@ -581,8 +582,8 @@ function ScheduleTable({
 }: {
   triggers: Trigger[];
   repositoryMap: Record<string, string>;
-  createdSortOrder: "asc" | "desc";
-  onSortCreatedChange: (next: "asc" | "desc") => void;
+  createdSortOrder: false | "asc" | "desc";
+  onSortCreatedChange: (next: false | "asc" | "desc") => void;
   onToggle: (trigger: Trigger) => void;
   onDelete: (triggerId: string) => void;
   onEdit: (trigger: Trigger) => void;
@@ -594,6 +595,9 @@ function ScheduleTable({
   runningTriggerId?: string;
 }) {
   const sortedTriggers = useMemo(() => {
+    if (createdSortOrder === false) {
+      return triggers;
+    }
     return [...triggers].sort((a, b) => {
       const createdAtA = new Date(a.createdAt).getTime();
       const createdAtB = new Date(b.createdAt).getTime();
@@ -603,6 +607,17 @@ function ScheduleTable({
         : createdAtA - createdAtB;
     });
   }, [triggers, createdSortOrder]);
+
+  function getSortIcon(isSorted: false | "asc" | "desc") {
+    if (isSorted === "asc") {
+      return ArrowUp01Icon;
+    }
+    if (isSorted === "desc") {
+      return ArrowDown01Icon;
+    }
+    return ArrowUpDownIcon;
+  }
+  const sortIcon = getSortIcon(createdSortOrder);
 
   if (triggers.length === 0) {
     return (
@@ -622,25 +637,19 @@ function ScheduleTable({
             <TableHead>Output</TableHead>
             <TableHead>Targets</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead
-              className="cursor-pointer select-none transition-colors hover:text-foreground"
-              onClick={() =>
-                onSortCreatedChange(
-                  createdSortOrder === "desc" ? "asc" : "desc"
-                )
-              }
-            >
-              <span className="inline-flex items-center gap-1">
-                Created
-                <HugeiconsIcon
-                  className="size-3.5"
-                  icon={
-                    createdSortOrder === "desc"
-                      ? ArrowDown01Icon
-                      : ArrowUp01Icon
-                  }
-                />
-              </span>
+            <TableHead>
+              <Button
+                className="-ml-4"
+                onClick={() =>
+                  onSortCreatedChange(
+                    createdSortOrder === "asc" ? "desc" : "asc"
+                  )
+                }
+                variant="ghost"
+              >
+                Created At
+                <HugeiconsIcon className="ml-2 size-4" icon={sortIcon} />
+              </Button>
             </TableHead>
             <TableHead className="w-12" />
           </TableRow>

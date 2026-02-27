@@ -4,7 +4,9 @@ import {
   ArrowDown01Icon,
   ArrowUp01Icon,
   ArrowUpDownIcon,
+  Calendar03Icon,
   Link04Icon,
+  Notification03Icon,
   PlayCircleIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -95,6 +97,20 @@ function IntegrationIcon({ type }: { type: IntegrationType }) {
           icon={PlayCircleIcon}
         />
       );
+    case "schedule":
+      return (
+        <HugeiconsIcon
+          className="size-4 text-muted-foreground"
+          icon={Calendar03Icon}
+        />
+      );
+    case "events":
+      return (
+        <HugeiconsIcon
+          className="size-4 text-muted-foreground"
+          icon={Notification03Icon}
+        />
+      );
     default: {
       return type;
     }
@@ -104,7 +120,17 @@ function IntegrationIcon({ type }: { type: IntegrationType }) {
 export const columns = [
   columnHelper.accessor("title", {
     header: "Title",
-    cell: (info) => <span className="font-medium">{info.getValue()}</span>,
+    cell: (info) => {
+      const title = info.getValue();
+      return (
+        <Tooltip>
+          <TooltipTrigger>
+            <span className="block max-w-56 truncate font-medium">{title}</span>
+          </TooltipTrigger>
+          <TooltipContent>{title}</TooltipContent>
+        </Tooltip>
+      );
+    },
   }),
   columnHelper.accessor("integrationType", {
     header: "Integration",

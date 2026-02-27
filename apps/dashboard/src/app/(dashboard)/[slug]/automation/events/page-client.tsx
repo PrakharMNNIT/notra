@@ -1,7 +1,12 @@
 "use client";
 
+import {
+  ArrowDown01Icon,
+  ArrowUp01Icon,
+  ArrowUpDownIcon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { Button } from "@notra/ui/components/ui/button";
-
 import { Github } from "@notra/ui/components/ui/svgs/github";
 import {
   Table,
@@ -59,6 +64,9 @@ export default function PageClient({ organizationSlug }: PageClientProps) {
   const organizationId = organization?.id;
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"active" | "paused">("active");
+  const [createdSortOrder, setCreatedSortOrder] = useState<
+    false | "asc" | "desc"
+  >(false);
 
   const { data, isPending } = useQuery<{ triggers: Trigger[] }>({
     queryKey: QUERY_KEYS.AUTOMATION.events(organizationId ?? ""),
@@ -264,7 +272,9 @@ export default function PageClient({ organizationSlug }: PageClientProps) {
 
             <TabsContent className="mt-4" value="active">
               <EventTable
+                createdSortOrder={createdSortOrder}
                 onDelete={handleDelete}
+                onSortCreatedChange={setCreatedSortOrder}
                 onToggle={handleToggle}
                 triggers={filteredTriggers}
               />
@@ -272,7 +282,9 @@ export default function PageClient({ organizationSlug }: PageClientProps) {
 
             <TabsContent className="mt-4" value="paused">
               <EventTable
+                createdSortOrder={createdSortOrder}
                 onDelete={handleDelete}
+                onSortCreatedChange={setCreatedSortOrder}
                 onToggle={handleToggle}
                 triggers={filteredTriggers}
               />
@@ -286,13 +298,41 @@ export default function PageClient({ organizationSlug }: PageClientProps) {
 
 function EventTable({
   triggers,
+  createdSortOrder,
+  onSortCreatedChange,
   onToggle,
   onDelete,
 }: {
   triggers: Trigger[];
+  createdSortOrder: false | "asc" | "desc";
+  onSortCreatedChange: (next: false | "asc" | "desc") => void;
   onToggle: (trigger: Trigger) => void;
   onDelete: (triggerId: string) => void;
 }) {
+  const sortedTriggers = useMemo(() => {
+    if (createdSortOrder === false) {
+      return triggers;
+    }
+    return [...triggers].sort((a, b) => {
+      const createdAtA = new Date(a.createdAt).getTime();
+      const createdAtB = new Date(b.createdAt).getTime();
+      return createdSortOrder === "desc"
+        ? createdAtB - createdAtA
+        : createdAtA - createdAtB;
+    });
+  }, [triggers, createdSortOrder]);
+
+  function getSortIcon(isSorted: false | "asc" | "desc") {
+    if (isSorted === "asc") {
+      return ArrowUp01Icon;
+    }
+    if (isSorted === "desc") {
+      return ArrowDown01Icon;
+    }
+    return ArrowUpDownIcon;
+  }
+  const sortIcon = getSortIcon(createdSortOrder);
+
   if (triggers.length === 0) {
     return (
       <div className="rounded-xl border border-dashed p-8 text-center text-muted-foreground text-sm">
@@ -311,12 +351,25 @@ function EventTable({
             <TableHead>Output</TableHead>
             <TableHead>Targets</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead>Created</TableHead>
+            <TableHead>
+              <Button
+                className="-ml-4"
+                onClick={() =>
+                  onSortCreatedChange(
+                    createdSortOrder === "asc" ? "desc" : "asc"
+                  )
+                }
+                variant="ghost"
+              >
+                Created At
+                <HugeiconsIcon className="ml-2 size-4" icon={sortIcon} />
+              </Button>
+            </TableHead>
             <TableHead className="w-12" />
           </TableRow>
         </TableHeader>
         <TableBody>
-          {triggers.map((trigger) => (
+          {sortedTriggers.map((trigger) => (
             <TableRow key={trigger.id}>
               <TableCell>
                 <div className="flex items-center gap-2">

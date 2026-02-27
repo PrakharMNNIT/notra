@@ -8,7 +8,15 @@ export const webhookLogsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(10),
   integrationType: z
-    .enum(["github", "linear", "slack", "webhook", "manual"])
+    .enum([
+      "github",
+      "linear",
+      "slack",
+      "webhook",
+      "manual",
+      "schedule",
+      "events",
+    ])
     .default("github"),
   integrationId: z.string().nullish(),
 });

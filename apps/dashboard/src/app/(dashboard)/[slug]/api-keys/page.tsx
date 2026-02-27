@@ -3,6 +3,7 @@
 import {
   ArrowDown01Icon,
   ArrowUp01Icon,
+  ArrowUpDownIcon,
   Book01Icon,
   Copy01Icon,
   Delete02Icon,
@@ -261,9 +262,9 @@ export default function ApiKeysPage() {
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deletingKey, setDeletingKey] = useState<ApiKeyListItem | null>(null);
-  const [createdSortOrder, setCreatedSortOrder] = useState<"asc" | "desc">(
-    "desc"
-  );
+  const [createdSortOrder, setCreatedSortOrder] = useState<
+    false | "asc" | "desc"
+  >(false);
 
   const { data: keys = [], isPending } = useQuery<ApiKeyListItem[]>({
     queryKey: QUERY_KEYS.API_KEYS.list(organizationId ?? ""),
@@ -283,12 +284,26 @@ export default function ApiKeysPage() {
   });
 
   const sortedKeys = useMemo(() => {
+    if (createdSortOrder === false) {
+      return keys;
+    }
     return [...keys].sort((a, b) => {
       return createdSortOrder === "desc"
         ? b.createdAt - a.createdAt
         : a.createdAt - b.createdAt;
     });
   }, [keys, createdSortOrder]);
+
+  function getSortIcon(isSorted: false | "asc" | "desc") {
+    if (isSorted === "asc") {
+      return ArrowUp01Icon;
+    }
+    if (isSorted === "desc") {
+      return ArrowDown01Icon;
+    }
+    return ArrowUpDownIcon;
+  }
+  const createdSortIcon = getSortIcon(createdSortOrder);
 
   const form = useForm({
     defaultValues: {
@@ -533,25 +548,22 @@ export default function ApiKeysPage() {
                 <TableHead>Key</TableHead>
                 <TableHead>Permission</TableHead>
                 <TableHead className="w-35">Expires</TableHead>
-                <TableHead
-                  className="w-35 cursor-pointer select-none transition-colors hover:text-foreground"
-                  onClick={() =>
-                    setCreatedSortOrder(
-                      createdSortOrder === "desc" ? "asc" : "desc"
-                    )
-                  }
-                >
-                  <span className="inline-flex items-center gap-1">
-                    Created
+                <TableHead className="w-35">
+                  <Button
+                    className="-ml-4"
+                    onClick={() =>
+                      setCreatedSortOrder(
+                        createdSortOrder === "asc" ? "desc" : "asc"
+                      )
+                    }
+                    variant="ghost"
+                  >
+                    Created At
                     <HugeiconsIcon
-                      className="size-3.5"
-                      icon={
-                        createdSortOrder === "desc"
-                          ? ArrowDown01Icon
-                          : ArrowUp01Icon
-                      }
+                      className="ml-2 size-4"
+                      icon={createdSortIcon}
                     />
-                  </span>
+                  </Button>
                 </TableHead>
                 <TableHead className="w-12" />
               </TableRow>

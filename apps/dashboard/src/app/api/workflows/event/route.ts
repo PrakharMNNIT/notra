@@ -255,7 +255,7 @@ export const { POST } = serve<EventWorkflowPayload>(
           await appendWebhookLog({
             organizationId: trigger.organizationId,
             integrationId: triggerId,
-            integrationType: "webhook",
+            integrationType: "events",
             title: `Event "${trigger.name.trim() || eventType}" failed to generate content`,
             status: "failed",
             statusCode: null,
@@ -277,7 +277,7 @@ export const { POST } = serve<EventWorkflowPayload>(
         await appendWebhookLog({
           organizationId: trigger.organizationId,
           integrationId: triggerId,
-          integrationType: "webhook",
+          integrationType: "events",
           title: `Event "${trigger.name.trim() || eventType}" created "${contentTitle}"`,
           status: "success",
           statusCode: null,

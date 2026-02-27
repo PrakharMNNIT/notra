@@ -24,7 +24,6 @@ import { createColumnHelper } from "@tanstack/react-table";
 import type {
   IntegrationType,
   Log,
-  LogDirection,
   StatusWithCode,
 } from "@/types/lib/webhooks/webhooks";
 
@@ -65,14 +64,6 @@ function getSortIcon(isSorted: false | "asc" | "desc") {
     return ArrowDown01Icon;
   }
   return ArrowUpDownIcon;
-}
-
-function DirectionBadge({ direction }: { direction: LogDirection }) {
-  return (
-    <Badge className="capitalize" variant="outline">
-      {direction}
-    </Badge>
-  );
 }
 
 function IntegrationIcon({ type }: { type: IntegrationType }) {
@@ -143,10 +134,6 @@ export const columns = [
         </div>
       );
     },
-  }),
-  columnHelper.accessor("direction", {
-    header: "Direction",
-    cell: (info) => <DirectionBadge direction={info.getValue()} />,
   }),
   columnHelper.accessor("status", {
     header: "Status",

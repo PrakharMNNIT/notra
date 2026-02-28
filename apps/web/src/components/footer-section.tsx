@@ -77,7 +77,7 @@ export default function FooterSection() {
               </Link>
               <Link
                 className="font-normal font-sans text-foreground text-sm leading-5 transition-colors hover:text-primary"
-                href="/#pricing"
+                href="/pricing"
               >
                 Pricing
               </Link>

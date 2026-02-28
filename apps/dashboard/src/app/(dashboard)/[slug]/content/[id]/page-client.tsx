@@ -115,7 +115,7 @@ export default function PageClient({
   const currentMarkdown = editedMarkdown ?? data?.content?.markdown ?? "";
   useEffect(() => {
     setPersistedTitle(data?.content?.title ?? null);
-  }, [contentId, data?.content?.title]);
+  }, [data?.content?.title]);
 
   const serverTitle =
     persistedTitle ??

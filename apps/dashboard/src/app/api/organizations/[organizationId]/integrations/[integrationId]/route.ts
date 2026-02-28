@@ -74,7 +74,9 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
 
       const affectedSchedules = allSchedules.filter((schedule) => {
         const parsed = triggerTargetsSchema.safeParse(schedule.targets);
-        if (!parsed.success) return false;
+        if (!parsed.success) {
+          return false;
+        }
         return parsed.data.repositoryIds.includes(integrationId);
       });
 
@@ -267,7 +269,9 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
 
     const affectedSchedules = allSchedules.filter((schedule) => {
       const parsed = triggerTargetsSchema.safeParse(schedule.targets);
-      if (!parsed.success) return false;
+      if (!parsed.success) {
+        return false;
+      }
       return parsed.data.repositoryIds.includes(integrationId);
     });
 

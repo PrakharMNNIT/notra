@@ -53,10 +53,6 @@
 
         "useOptionalChain": "warn"
       },
-      "performance": {
-        /* Needs more work to fix */
-        "noNamespaceImport": "warn"
-      },
       "correctness": {
         /* Doesn't work with Astro */
         "noUnusedImports": "off",

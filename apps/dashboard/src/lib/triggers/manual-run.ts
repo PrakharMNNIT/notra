@@ -5,7 +5,7 @@ import { checkLogRetention } from "@/lib/billing/check-log-retention";
 import { triggerEventNow, triggerScheduleNow } from "@/lib/triggers/qstash";
 import { appendWebhookLog } from "@/lib/webhooks/logging";
 
-type TriggerRecord = {
+interface TriggerRecord {
   id: string;
   organizationId: string;
   sourceType: string;
@@ -14,7 +14,7 @@ type TriggerRecord = {
   outputType: string;
   name: string | null;
   enabled: boolean;
-};
+}
 
 type ManualRunKind = "schedule" | "event";
 

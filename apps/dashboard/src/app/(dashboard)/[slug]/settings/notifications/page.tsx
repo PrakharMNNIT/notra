@@ -36,7 +36,7 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
     queryKey: ["members", organization?.id],
     queryFn: async () => {
       const { data, error } = await authClient.organization.listMembers({
-        query: { organizationId: organization!.id },
+        query: { organizationId: organization?.id },
       });
       if (error) {
         throw new Error("Failed to fetch members");
@@ -55,7 +55,7 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
     queryKey: QUERY_KEYS.NOTIFICATION_SETTINGS.settings(organization?.id ?? ""),
     queryFn: async () => {
       const response = await fetch(
-        `/api/organizations/${organization!.id}/notification-settings`
+        `/api/organizations/${organization?.id}/notification-settings`
       );
       if (!response.ok) {
         throw new Error("Failed to fetch notification settings");
@@ -69,7 +69,7 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
   const { mutate: updateSettings, isPending: isUpdating } = useMutation({
     mutationFn: async (data: Partial<NotificationSettings>) => {
       const response = await fetch(
-        `/api/organizations/${organization!.id}/notification-settings`,
+        `/api/organizations/${organization?.id}/notification-settings`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },

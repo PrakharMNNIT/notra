@@ -8,6 +8,7 @@ import {
   CollapsibleTrigger,
 } from "@notra/ui/components/ui/collapsible";
 import { Input } from "@notra/ui/components/ui/input";
+import { Skeleton } from "@notra/ui/components/ui/skeleton";
 import { Github } from "@notra/ui/components/ui/svgs/github";
 import {
   Tooltip,
@@ -214,14 +215,7 @@ function EventsSection({
         )}
       </div>
       {isLoadingEvents ? (
-        <div className="space-y-2">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div
-              className="h-12 animate-pulse rounded-lg border bg-muted/30"
-              key={i}
-            />
-          ))}
-        </div>
+        <Skeleton className="h-18 w-full rounded-lg" />
       ) : isError ? (
         <div className="flex items-center justify-center rounded-lg border border-destructive/50 border-dashed p-8 text-destructive text-sm">
           Failed to load event triggers.
@@ -324,14 +318,7 @@ function SchedulesSection({
         )}
       </div>
       {isLoadingSchedules ? (
-        <div className="space-y-2">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div
-              className="h-12 animate-pulse rounded-lg border bg-muted/30"
-              key={i}
-            />
-          ))}
-        </div>
+        <Skeleton className="h-18 w-full rounded-lg" />
       ) : isError ? (
         <div className="flex items-center justify-center rounded-lg border border-destructive/50 border-dashed p-8 text-destructive text-sm">
           Failed to load schedules.
@@ -552,7 +539,7 @@ export default function PageClient({ integrationId }: PageClientProps) {
                   <h2 className="font-semibold text-lg">Developer Tools</h2>
                   <Badge variant="secondary">Debug</Badge>
                 </div>
-                <ChevronDownIcon className="size-5 transition-transform [[data-panel-open]_&]:rotate-180" />
+                <ChevronDownIcon className="size-5 in-data-panel-open:rotate-180 transition-transform" />
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <div className="space-y-4 rounded-lg border p-6">

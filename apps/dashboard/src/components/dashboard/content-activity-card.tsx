@@ -8,6 +8,7 @@ import {
   ContributionGraphLegend,
   ContributionGraphTotalCount,
 } from "@notra/ui/components/kibo-ui/contribution-graph";
+import { Skeleton } from "@notra/ui/components/ui/skeleton";
 import {
   Tooltip,
   TooltipContent,
@@ -16,7 +17,6 @@ import {
 import { cn } from "@notra/ui/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
-import { Skeleton } from "@notra/ui/components/ui/skeleton";
 import type { ContentPublishingMetricsData } from "@/types/dashboard";
 
 interface ActivityEntry {
@@ -54,10 +54,7 @@ export const ContentActivityCard = () => {
 
   if (isPending) {
     return (
-      <Skeleton
-        className="rounded-lg"
-        style={{ width: 848, height: 160 }}
-      />
+      <Skeleton className="rounded-lg" style={{ width: 848, height: 160 }} />
     );
   }
 

@@ -348,7 +348,7 @@ export default function GeneralSettingsPage({ params }: PageProps) {
                 </Avatar>
               </button>
               <div className="space-y-1">
-                <p className="font-medium text-sm">Organization logo</p>
+                <p className="font-medium text-sm">Logo</p>
                 <p className="text-muted-foreground text-xs">
                   {isUploadingLogo
                     ? "Uploading..."
@@ -360,7 +360,11 @@ export default function GeneralSettingsPage({ params }: PageProps) {
             <form.Field name="name">
               {(field) => (
                 <div className="space-y-2">
-                  <Label htmlFor={field.name}>Organization Name</Label>
+                  <Label htmlFor={field.name}>Name</Label>{" "}
+                  <p className="text-muted-foreground text-xs">
+                    This is the name of your organization as it appears across
+                    the platform
+                  </p>
                   <Input
                     id={field.name}
                     onBlur={field.handleBlur}
@@ -368,10 +372,6 @@ export default function GeneralSettingsPage({ params }: PageProps) {
                     placeholder="My Organization"
                     value={field.state.value}
                   />
-                  <p className="text-muted-foreground text-xs">
-                    This is the name of your organization as it appears across
-                    the platform
-                  </p>
                 </div>
               )}
             </form.Field>
@@ -386,7 +386,11 @@ export default function GeneralSettingsPage({ params }: PageProps) {
             >
               {(field) => (
                 <div className="space-y-2">
-                  <Label htmlFor={field.name}>Organization Slug</Label>
+                  <Label htmlFor={field.name}>Slug</Label>
+                  <p className="text-muted-foreground text-xs">
+                    Used in URLs: https://app.usenotra.com/
+                    {field.state.value || "your-slug"}
+                  </p>
                   <Input
                     aria-invalid={field.state.meta.errors.length > 0}
                     id={field.name}
@@ -400,17 +404,13 @@ export default function GeneralSettingsPage({ params }: PageProps) {
                       {field.state.meta.errors[0]}
                     </p>
                   ) : null}
-                  <p className="text-muted-foreground text-xs">
-                    Used in URLs: https://app.usenotra.com/
-                    {field.state.value || "your-slug"}
-                  </p>
                 </div>
               )}
             </form.Field>
 
             <div className="space-y-2">
-              <Label htmlFor="organization-id">Organization ID</Label>
-              <Input disabled id="organization-id" value={organization.id} />
+              <Label htmlFor="organization-id">ID</Label>
+              <Input id="organization-id" value={organization.id} />
             </div>
 
             <Button disabled={isUpdating} type="submit">

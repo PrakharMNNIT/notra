@@ -22,6 +22,11 @@ const nextConfig: NextConfig = {
         destination: "/login",
         permanent: false,
       },
+      {
+        source: "/:slug/settings",
+        destination: "/:slug/settings/general",
+        permanent: true,
+      },
     ];
   },
   async headers() {

@@ -1,5 +1,5 @@
 import { db } from "@notra/db/drizzle";
-import { members, organizations } from "@notra/db/schema";
+import { members, organizations, sessions } from "@notra/db/schema";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError } from "better-auth/api";
@@ -284,7 +284,10 @@ export const auth = betterAuth({
         resetLink: url,
       });
     },
-    resetPasswordTokenExpiresIn: 3600, // 1 hour
+    resetPasswordTokenExpiresIn: 3600,
+    onPasswordReset: async ({ user }) => {
+      await db.delete(sessions).where(eq(sessions.userId, user.id));
+    },
   },
   account: {
     accountLinking: {

@@ -37,7 +37,6 @@ const nextConfig: NextConfig = {
       "font-src 'self'",
       [
         "img-src 'self' data: blob:",
-        "i.pravatar.cc",
         "api.dicebear.com",
         process.env.CLOUDFLARE_PUBLIC_URL
           ? new URL(process.env.CLOUDFLARE_PUBLIC_URL).hostname

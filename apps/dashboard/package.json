@@ -64,6 +64,7 @@
     "gray-matter": "^4.0.3",
     "lexical": "^0.39.0",
     "lucide-react": "^0.562.0",
+    "mailchecker": "^6.0.19",
     "marked": "^17.0.1",
     "motion": "^12.34.2",
     "nanoid": "^5.1.6",

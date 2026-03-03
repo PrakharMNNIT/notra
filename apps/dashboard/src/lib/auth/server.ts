@@ -11,6 +11,7 @@ import {
   organization,
 } from "better-auth/plugins";
 import { eq } from "drizzle-orm";
+import { isValid as isNotDisposableEmail } from "mailchecker";
 import { customAlphabet } from "nanoid";
 import { cookies } from "next/headers";
 import { LAST_VISITED_ORGANIZATION_COOKIE } from "@/constants/cookies";
@@ -300,6 +301,13 @@ export const auth = betterAuth({
   databaseHooks: {
     user: {
       create: {
+        before: async (user) => {
+          if (!isNotDisposableEmail(user.email)) {
+            throw new APIError("BAD_REQUEST", {
+              message: "Disposable email addresses are not allowed",
+            });
+          }
+        },
         after: async (user) => {
           const email = user.email || "";
           const raw = email.split("@")[0] || "";

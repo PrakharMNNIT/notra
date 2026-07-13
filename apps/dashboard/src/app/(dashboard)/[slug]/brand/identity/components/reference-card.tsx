@@ -5,6 +5,7 @@ import {
   Delete02Icon,
   Edit02Icon,
   FavouriteIcon,
+  Link04Icon,
   MoreHorizontalIcon,
   RepeatIcon,
   TextIcon,
@@ -39,6 +40,7 @@ import type {
   TweetMetadata,
 } from "@/types/hooks/brand-references";
 import { formatTweetContent } from "@/utils/format-tweet-content";
+import { getSafeReferenceSourceUrl } from "@/utils/reference-source-url";
 
 const PLATFORM_OPTIONS = [
   { value: "all", label: "All platforms" },
@@ -55,6 +57,10 @@ const PLATFORM_LABELS: Record<string, string> = {
 };
 
 const TRAILING_ZERO_REGEX = /\.0$/;
+const REFERENCE_DATE_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  day: "numeric",
+  month: "short",
+});
 
 function formatCompactNumber(num: number): string {
   if (num >= 1_000_000) {
@@ -85,7 +91,29 @@ function formatRelativeDate(dateStr: string): string {
     return `${Math.floor(diffDays / 7)}w ago`;
   }
 
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return REFERENCE_DATE_FORMATTER.format(date);
+}
+
+function SourceLink({ sourceUrl }: { sourceUrl: string | null | undefined }) {
+  if (!sourceUrl) {
+    return null;
+  }
+  const safeSourceUrl = getSafeReferenceSourceUrl(sourceUrl);
+  if (!safeSourceUrl) {
+    return null;
+  }
+
+  return (
+    <a
+      className="inline-flex w-fit items-center gap-1 text-muted-foreground text-xs transition-colors hover:text-foreground"
+      href={safeSourceUrl}
+      rel="noreferrer"
+      target="_blank"
+    >
+      <HugeiconsIcon className="size-3.5" icon={Link04Icon} />
+      Open source
+    </a>
+  );
 }
 
 export function ReferenceCard({
@@ -337,7 +365,10 @@ function TwitterReferenceCard({
                 {metadata?.createdAt && (
                   <>
                     <span className="text-muted-foreground/50 text-xs">·</span>
-                    <span className="shrink-0 text-muted-foreground/70 text-xs">
+                    <span
+                      className="shrink-0 text-muted-foreground/70 text-xs"
+                      suppressHydrationWarning
+                    >
                       {formatRelativeDate(metadata.createdAt)}
                     </span>
                   </>
@@ -360,6 +391,8 @@ function TwitterReferenceCard({
         <p className="whitespace-pre-wrap text-[0.8125rem] leading-relaxed">
           {formatTweetContent(reference.content)}
         </p>
+
+        <SourceLink sourceUrl={reference.sourceUrl ?? metadata?.url} />
 
         {hasStats && (
           <div className="flex items-center gap-3 pt-0.5">
@@ -418,7 +451,10 @@ function CustomReferenceCard({
               <span className="font-semibold text-sm leading-tight">
                 Custom reference
               </span>
-              <p className="text-muted-foreground/70 text-xs">
+              <p
+                className="text-muted-foreground/70 text-xs"
+                suppressHydrationWarning
+              >
                 {formatRelativeDate(reference.createdAt)}
               </p>
             </div>
@@ -438,6 +474,8 @@ function CustomReferenceCard({
         <p className="whitespace-pre-wrap text-[0.8125rem] leading-relaxed">
           {formatTweetContent(reference.content)}
         </p>
+
+        <SourceLink sourceUrl={reference.sourceUrl} />
       </div>
 
       <div className="rounded-b-xl border-t bg-muted/50 px-4 py-1.5">

@@ -6,11 +6,38 @@ import { syncPersistedBrandReferenceMemory } from "@notra/db/utils/brand-referen
 import { canonicalizeReferenceSourceUrl } from "@notra/db/utils/reference-source-url";
 import { desc, eq } from "drizzle-orm";
 import { Effect } from "effect";
+import { REFERENCE_INSERT_BATCH_SIZE } from "../constants/references";
 import { REFERENCE_MEMORY_SYNC_CONCURRENCY } from "../constants/supermemory";
 import type { ReferenceInput } from "../types/references";
 
 function referenceKey(reference: Pick<ReferenceInput, "content" | "type">) {
   return `${reference.type}\u0000${reference.content}`;
+}
+
+function buildReferenceMetadata(reference: ReferenceInput) {
+  const metadata: Record<string, unknown> = { source: "onboarding-agent" };
+  if (reference.authorName) {
+    metadata.authorName = reference.authorName;
+  }
+  if (reference.authorHandle) {
+    metadata.authorHandle = reference.authorHandle;
+  }
+  if (reference.title) {
+    metadata.title = reference.title;
+  }
+  if (reference.publishedAt) {
+    metadata.createdAt = reference.publishedAt;
+  }
+  if (reference.likes != null) {
+    metadata.likes = reference.likes;
+  }
+  if (reference.retweets != null) {
+    metadata.retweets = reference.retweets;
+  }
+  if (reference.replies != null) {
+    metadata.replies = reference.replies;
+  }
+  return metadata;
 }
 
 function getCanonicalSourceUrl(sourceUrl: string | null | undefined) {
@@ -103,9 +130,7 @@ export async function addBrandReferences(
       brandSettingsId: settings.id,
       content: reference.content,
       id: randomUUID(),
-      metadata: {
-        source: "onboarding-agent",
-      },
+      metadata: buildReferenceMetadata(reference),
       note: reference.note ?? null,
       sourceCapturedAt: reference.sourceCapturedAt
         ? new Date(reference.sourceCapturedAt)
@@ -115,10 +140,12 @@ export async function addBrandReferences(
       sourceUrl: reference.sourceUrl ?? null,
       type: reference.type,
     }));
-    const inserted =
-      values.length > 0
-        ? await tx.insert(brandReferences).values(values).returning()
-        : [];
+    const inserted: (typeof brandReferences.$inferSelect)[] = [];
+    for (let i = 0; i < values.length; i += REFERENCE_INSERT_BATCH_SIZE) {
+      const chunk = values.slice(i, i + REFERENCE_INSERT_BATCH_SIZE);
+      const rows = await tx.insert(brandReferences).values(chunk).returning();
+      inserted.push(...rows);
+    }
 
     return {
       brandSettingsId: settings.id,

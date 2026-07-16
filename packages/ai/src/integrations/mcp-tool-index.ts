@@ -31,6 +31,7 @@ import type { McpRequestAuth } from "../types/mcp-oauth";
 import type {
   IndexedMcpTool,
   McpSessionSurface,
+  McpToolActionPhrases,
   McpToolDefinition,
   McpToolIndexTransaction,
 } from "../types/mcp-tool-index";
@@ -48,7 +49,8 @@ export async function refreshMcpToolIndexForOrganization({
   const integrations = await db.query.mcpServerIntegrations.findMany({
     where: and(
       eq(mcpServerIntegrations.organizationId, organizationId),
-      eq(mcpServerIntegrations.enabled, true)
+      eq(mcpServerIntegrations.enabled, true),
+      eq(mcpServerIntegrations.resourceType, "connection")
     ),
     columns: {
       id: true,
@@ -95,6 +97,32 @@ export async function refreshMcpToolIndexForIntegration({
     throw new Error("MCP server integration not found.");
   }
 
+  const sourceToolPhrases = integration.storeSourceIntegrationId
+    ? await db.query.mcpToolIndex.findMany({
+        where: and(
+          eq(
+            mcpToolIndex.serverIntegrationId,
+            integration.storeSourceIntegrationId
+          ),
+          eq(mcpToolIndex.status, "active")
+        ),
+        columns: {
+          serverToolName: true,
+          actionPhrasePresent: true,
+          actionPhrasePast: true,
+        },
+      })
+    : [];
+  const sourceToolPhrasesByName = new Map(
+    sourceToolPhrases.map((tool) => [
+      tool.serverToolName,
+      {
+        present: tool.actionPhrasePresent,
+        past: tool.actionPhrasePast,
+      },
+    ])
+  );
+
   if (!integration.enabled) {
     await db
       .update(mcpServerIntegrations)
@@ -139,7 +167,7 @@ export async function refreshMcpToolIndexForIntegration({
       seenToolNames.add(definition.name);
     }
 
-    await db.transaction(async (tx) => {
+    const indexedToolCount = await db.transaction(async (tx) => {
       for (const definition of listing.definitions) {
         await upsertIndexedTool({
           database: tx,
@@ -150,6 +178,7 @@ export async function refreshMcpToolIndexForIntegration({
             description: integration.description,
           },
           definition,
+          actionPhrases: sourceToolPhrasesByName.get(definition.name),
         });
       }
 
@@ -163,7 +192,11 @@ export async function refreshMcpToolIndexForIntegration({
           .where(
             and(
               eq(mcpToolIndex.serverIntegrationId, integrationId),
-              notInArray(mcpToolIndex.serverToolName, Array.from(seenToolNames))
+              notInArray(
+                mcpToolIndex.serverToolName,
+                Array.from(seenToolNames)
+              ),
+              sql`coalesce(${mcpToolIndex.meta} ->> 'notraManual', 'false') <> 'true'`
             )
           );
       } else {
@@ -173,8 +206,24 @@ export async function refreshMcpToolIndexForIntegration({
             status: "stale",
             updatedAt: new Date(),
           })
-          .where(eq(mcpToolIndex.serverIntegrationId, integrationId));
+          .where(
+            and(
+              eq(mcpToolIndex.serverIntegrationId, integrationId),
+              sql`coalesce(${mcpToolIndex.meta} ->> 'notraManual', 'false') <> 'true'`
+            )
+          );
       }
+
+      const [toolCount] = await tx
+        .select({ value: count() })
+        .from(mcpToolIndex)
+        .where(
+          and(
+            eq(mcpToolIndex.serverIntegrationId, integrationId),
+            eq(mcpToolIndex.status, "active")
+          )
+        );
+      const activeToolCount = toolCount?.value ?? 0;
 
       await tx
         .update(mcpServerIntegrations)
@@ -182,13 +231,15 @@ export async function refreshMcpToolIndexForIntegration({
           lastToolSyncAt: new Date(),
           toolSyncStatus: "synced",
           toolSyncError: null,
-          indexedToolCount: seenToolNames.size,
+          indexedToolCount: activeToolCount,
           updatedAt: new Date(),
         })
         .where(eq(mcpServerIntegrations.id, integrationId));
+
+      return activeToolCount;
     });
 
-    return { integrationId, indexedToolCount: seenToolNames.size };
+    return { integrationId, indexedToolCount };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await db
@@ -229,10 +280,16 @@ export async function searchMcpToolIndex({
   const activeCount = await db
     .select({ value: count() })
     .from(mcpToolIndex)
+    .innerJoin(
+      mcpServerIntegrations,
+      eq(mcpToolIndex.serverIntegrationId, mcpServerIntegrations.id)
+    )
     .where(
       and(
         eq(mcpToolIndex.organizationId, organizationId),
-        eq(mcpToolIndex.status, "active")
+        eq(mcpToolIndex.status, "active"),
+        eq(mcpServerIntegrations.enabled, true),
+        eq(mcpServerIntegrations.resourceType, "connection")
       )
     )
     .then((rows) => Number(rows[0]?.value ?? 0));
@@ -252,6 +309,7 @@ export async function searchMcpToolIndex({
     eq(mcpToolIndex.organizationId, organizationId),
     eq(mcpToolIndex.status, "active"),
     eq(mcpServerIntegrations.enabled, true),
+    eq(mcpServerIntegrations.resourceType, "connection"),
     serverIntegrationId
       ? eq(mcpToolIndex.serverIntegrationId, serverIntegrationId)
       : undefined,
@@ -271,6 +329,8 @@ export async function searchMcpToolIndex({
       serverName: mcpServerIntegrations.name,
       serverUrl: mcpServerIntegrations.url,
       serverEnabled: mcpServerIntegrations.enabled,
+      serverLogoLightUrl: mcpServerIntegrations.logoLightUrl,
+      serverLogoDarkUrl: mcpServerIntegrations.logoDarkUrl,
       rank: normalizedQuery
         ? sql<number>`ts_rank_cd(to_tsvector('english', ${mcpToolIndex.searchText}), plainto_tsquery('english', ${normalizedQuery}))`
         : sql<number>`0`,
@@ -294,6 +354,8 @@ export async function searchMcpToolIndex({
           serverName: row.serverName,
           serverUrl: row.serverUrl,
           serverEnabled: row.serverEnabled,
+          serverLogoLightUrl: row.serverLogoLightUrl,
+          serverLogoDarkUrl: row.serverLogoDarkUrl,
         })
       )
     );
@@ -312,6 +374,8 @@ export async function getIndexedMcpToolsForRuntime({
       serverName: mcpServerIntegrations.name,
       serverUrl: mcpServerIntegrations.url,
       serverEnabled: mcpServerIntegrations.enabled,
+      serverLogoLightUrl: mcpServerIntegrations.logoLightUrl,
+      serverLogoDarkUrl: mcpServerIntegrations.logoDarkUrl,
     })
     .from(mcpToolIndex)
     .innerJoin(
@@ -322,7 +386,8 @@ export async function getIndexedMcpToolsForRuntime({
       and(
         eq(mcpToolIndex.organizationId, organizationId),
         eq(mcpToolIndex.status, "active"),
-        eq(mcpServerIntegrations.enabled, true)
+        eq(mcpServerIntegrations.enabled, true),
+        eq(mcpServerIntegrations.resourceType, "connection")
       )
     )
     .orderBy(mcpToolIndex.runtimeToolName)
@@ -333,6 +398,8 @@ export async function getIndexedMcpToolsForRuntime({
           serverName: row.serverName,
           serverUrl: row.serverUrl,
           serverEnabled: row.serverEnabled,
+          serverLogoLightUrl: row.serverLogoLightUrl,
+          serverLogoDarkUrl: row.serverLogoDarkUrl,
         })
       )
     );
@@ -354,7 +421,8 @@ export async function hasActiveIndexedMcpToolsForOrganization({
       and(
         eq(mcpToolIndex.organizationId, organizationId),
         eq(mcpToolIndex.status, "active"),
-        eq(mcpServerIntegrations.enabled, true)
+        eq(mcpServerIntegrations.enabled, true),
+        eq(mcpServerIntegrations.resourceType, "connection")
       )
     )
     .limit(1);
@@ -379,6 +447,8 @@ export async function getSessionActivatedMcpTools({
       serverName: mcpServerIntegrations.name,
       serverUrl: mcpServerIntegrations.url,
       serverEnabled: mcpServerIntegrations.enabled,
+      serverLogoLightUrl: mcpServerIntegrations.logoLightUrl,
+      serverLogoDarkUrl: mcpServerIntegrations.logoDarkUrl,
     })
     .from(mcpSessionToolActivations)
     .innerJoin(
@@ -397,6 +467,7 @@ export async function getSessionActivatedMcpTools({
         eq(mcpToolIndex.organizationId, organizationId),
         eq(mcpToolIndex.status, "active"),
         eq(mcpServerIntegrations.enabled, true),
+        eq(mcpServerIntegrations.resourceType, "connection"),
         or(
           isNull(mcpSessionToolActivations.expiresAt),
           gt(mcpSessionToolActivations.expiresAt, now)
@@ -410,6 +481,8 @@ export async function getSessionActivatedMcpTools({
           serverName: row.serverName,
           serverUrl: row.serverUrl,
           serverEnabled: row.serverEnabled,
+          serverLogoLightUrl: row.serverLogoLightUrl,
+          serverLogoDarkUrl: row.serverLogoDarkUrl,
         }),
         activationId: row.activation.id,
         sourceQuery: row.activation.sourceQuery,
@@ -565,6 +638,8 @@ export async function getIndexedMcpToolByRuntimeName({
       serverName: mcpServerIntegrations.name,
       serverUrl: mcpServerIntegrations.url,
       serverEnabled: mcpServerIntegrations.enabled,
+      serverLogoLightUrl: mcpServerIntegrations.logoLightUrl,
+      serverLogoDarkUrl: mcpServerIntegrations.logoDarkUrl,
     })
     .from(mcpToolIndex)
     .innerJoin(
@@ -574,7 +649,10 @@ export async function getIndexedMcpToolByRuntimeName({
     .where(
       and(
         eq(mcpToolIndex.organizationId, organizationId),
-        eq(mcpToolIndex.runtimeToolName, runtimeToolName)
+        eq(mcpToolIndex.runtimeToolName, runtimeToolName),
+        eq(mcpToolIndex.status, "active"),
+        eq(mcpServerIntegrations.enabled, true),
+        eq(mcpServerIntegrations.resourceType, "connection")
       )
     )
     .limit(1);
@@ -584,6 +662,8 @@ export async function getIndexedMcpToolByRuntimeName({
         serverName: row.serverName,
         serverUrl: row.serverUrl,
         serverEnabled: row.serverEnabled,
+        serverLogoLightUrl: row.serverLogoLightUrl,
+        serverLogoDarkUrl: row.serverLogoDarkUrl,
       })
     : null;
 }
@@ -675,7 +755,8 @@ export async function getEnabledMcpServerCount(organizationId: string) {
     .where(
       and(
         eq(mcpServerIntegrations.organizationId, organizationId),
-        eq(mcpServerIntegrations.enabled, true)
+        eq(mcpServerIntegrations.enabled, true),
+        eq(mcpServerIntegrations.resourceType, "connection")
       )
     );
   return Number(row?.value ?? 0);
@@ -731,6 +812,7 @@ async function upsertIndexedTool({
   organizationId,
   integration,
   definition,
+  actionPhrases,
 }: {
   database: McpToolIndexTransaction;
   organizationId: string;
@@ -740,6 +822,7 @@ async function upsertIndexedTool({
     description: string | null;
   };
   definition: McpToolDefinition;
+  actionPhrases?: McpToolActionPhrases;
 }) {
   const runtimeToolName = await createUniqueRuntimeToolName({
     database,
@@ -774,6 +857,7 @@ async function upsertIndexedTool({
         runtimeToolName,
         searchText,
         schemaHash,
+        actionPhrases,
       })
     );
   } catch (error) {
@@ -800,6 +884,7 @@ async function upsertIndexedTool({
         runtimeToolName: collisionRuntimeToolName,
       }),
       schemaHash,
+      actionPhrases,
     });
   }
 }
@@ -812,6 +897,7 @@ async function upsertIndexedToolWithRuntimeName({
   runtimeToolName,
   searchText,
   schemaHash,
+  actionPhrases,
 }: {
   database: McpToolIndexTransaction;
   organizationId: string;
@@ -820,6 +906,7 @@ async function upsertIndexedToolWithRuntimeName({
   runtimeToolName: string;
   searchText: string;
   schemaHash: string;
+  actionPhrases?: McpToolActionPhrases;
 }) {
   await database
     .insert(mcpToolIndex)
@@ -831,6 +918,8 @@ async function upsertIndexedToolWithRuntimeName({
       runtimeToolName,
       title: definition.title ?? definition.annotations?.title ?? null,
       description: definition.description ?? null,
+      actionPhrasePresent: actionPhrases?.present ?? null,
+      actionPhrasePast: actionPhrases?.past ?? null,
       inputSchema: definition.inputSchema,
       outputSchema: definition.outputSchema ?? null,
       annotations: definition.annotations ?? null,
@@ -848,6 +937,12 @@ async function upsertIndexedToolWithRuntimeName({
         runtimeToolName,
         title: definition.title ?? definition.annotations?.title ?? null,
         description: definition.description ?? null,
+        ...(actionPhrases
+          ? {
+              actionPhrasePresent: actionPhrases.present,
+              actionPhrasePast: actionPhrases.past,
+            }
+          : {}),
         inputSchema: definition.inputSchema,
         outputSchema: definition.outputSchema ?? null,
         annotations: definition.annotations ?? null,
@@ -874,6 +969,8 @@ async function getToolsByIds(organizationId: string, toolIds: string[]) {
       serverName: mcpServerIntegrations.name,
       serverUrl: mcpServerIntegrations.url,
       serverEnabled: mcpServerIntegrations.enabled,
+      serverLogoLightUrl: mcpServerIntegrations.logoLightUrl,
+      serverLogoDarkUrl: mcpServerIntegrations.logoDarkUrl,
     })
     .from(mcpToolIndex)
     .innerJoin(
@@ -883,7 +980,9 @@ async function getToolsByIds(organizationId: string, toolIds: string[]) {
     .where(
       and(
         eq(mcpToolIndex.organizationId, organizationId),
-        inArray(mcpToolIndex.id, toolIds)
+        inArray(mcpToolIndex.id, toolIds),
+        eq(mcpServerIntegrations.enabled, true),
+        eq(mcpServerIntegrations.resourceType, "connection")
       )
     )
     .then((rows) =>
@@ -892,6 +991,8 @@ async function getToolsByIds(organizationId: string, toolIds: string[]) {
           serverName: row.serverName,
           serverUrl: row.serverUrl,
           serverEnabled: row.serverEnabled,
+          serverLogoLightUrl: row.serverLogoLightUrl,
+          serverLogoDarkUrl: row.serverLogoDarkUrl,
         })
       )
     );
@@ -903,6 +1004,8 @@ function toIndexedMcpTool(
     serverName: string;
     serverUrl: string;
     serverEnabled: boolean;
+    serverLogoLightUrl: string | null;
+    serverLogoDarkUrl: string | null;
   }
 ): IndexedMcpTool {
   return {
@@ -913,6 +1016,8 @@ function toIndexedMcpTool(
     runtimeToolName: row.runtimeToolName,
     title: row.title,
     description: row.description,
+    actionPhrasePresent: row.actionPhrasePresent,
+    actionPhrasePast: row.actionPhrasePast,
     inputSchema: row.inputSchema,
     outputSchema: row.outputSchema,
     annotations: row.annotations,
@@ -923,6 +1028,8 @@ function toIndexedMcpTool(
     serverName: server.serverName,
     serverUrl: server.serverUrl,
     serverEnabled: server.serverEnabled,
+    serverLogoLightUrl: server.serverLogoLightUrl,
+    serverLogoDarkUrl: server.serverLogoDarkUrl,
   };
 }
 

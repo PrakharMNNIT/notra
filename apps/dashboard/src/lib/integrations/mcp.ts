@@ -10,16 +10,17 @@ export function buildMcpUrl(raw: string) {
   return host ? `https://${host}` : "";
 }
 
+export function toMcpFormUrl(url: string) {
+  return url.trim().replace(MCP_URL_PROTOCOL_REGEX, "");
+}
+
 export function getMcpFaviconUrl(url: string | null | undefined) {
   if (!url) {
     return undefined;
   }
   const normalizedUrl = url.startsWith("http") ? url : `https://${url}`;
   try {
-    const domain = new URL(normalizedUrl).hostname
-      .split(".")
-      .slice(-2)
-      .join(".");
+    const domain = new URL(normalizedUrl).hostname;
     return `https://icons.duckduckgo.com/ip3/${domain}.ico`;
   } catch {
     return undefined;
@@ -52,4 +53,13 @@ export function buildMcpHeaders(
   }
 
   return headers;
+}
+
+export function toMcpFormAuthType(
+  authType: string
+): "none" | "headers" | "oauth" {
+  if (authType === "headers" || authType === "oauth") {
+    return authType;
+  }
+  return "none";
 }

@@ -500,6 +500,21 @@ export const mcpServerIntegrations = pgTable(
     name: text("name").notNull(),
     url: text("url").notNull(),
     description: text("description"),
+    resourceType: text("resource_type")
+      .$type<"connection" | "store_listing">()
+      .default("connection")
+      .notNull(),
+    author: text("author"),
+    websiteUrl: text("website_url"),
+    brandColor: text("brand_color"),
+    logoLightUrl: text("logo_light_url"),
+    logoDarkUrl: text("logo_dark_url"),
+    bannerUrl: text("banner_url"),
+    storeSourceIntegrationId: text("store_source_integration_id"),
+    storeStatus: text("store_status").default("draft").notNull(),
+    reviewNote: text("review_note"),
+    submittedAt: timestamp("submitted_at"),
+    reviewedAt: timestamp("reviewed_at"),
     authType: text("auth_type").default("none").notNull(),
     encryptedHeaders: jsonb("encrypted_headers")
       .$type<Record<string, string>>()
@@ -521,18 +536,48 @@ export const mcpServerIntegrations = pgTable(
       "mcpServerIntegrations_authType_check",
       sql`${table.authType} IN ('none', 'headers', 'oauth')`
     ),
+    check(
+      "mcpServerIntegrations_storeStatus_check",
+      sql`${table.storeStatus} IN ('draft', 'pending_review', 'live', 'rejected')`
+    ),
+    check(
+      "mcpServerIntegrations_resourceType_check",
+      sql`${table.resourceType} IN ('connection', 'store_listing')`
+    ),
+    check(
+      "mcpServerIntegrations_resourceState_check",
+      sql`(
+        (${table.resourceType} = 'store_listing' AND ${table.storeSourceIntegrationId} IS NULL)
+        OR
+        (${table.resourceType} = 'connection' AND ${table.storeStatus} = 'draft' AND ${table.reviewNote} IS NULL AND ${table.submittedAt} IS NULL AND ${table.reviewedAt} IS NULL)
+      )`
+    ),
+    index("mcpServerIntegrations_resourceType_idx").on(table.resourceType),
+    index("mcpServerIntegrations_storeStatus_idx").on(table.storeStatus),
     index("mcpServerIntegrations_organizationId_idx").on(table.organizationId),
     index("mcpServerIntegrations_createdByUserId_idx").on(
       table.createdByUserId
+    ),
+    index("mcpServerIntegrations_storeSourceIntegrationId_idx").on(
+      table.storeSourceIntegrationId
     ),
     uniqueIndex("mcpServerIntegrations_org_id_uidx").on(
       table.organizationId,
       table.id
     ),
-    uniqueIndex("mcpServerIntegrations_org_name_uidx").on(
+    uniqueIndex("mcpServerIntegrations_org_resourceType_name_uidx").on(
       table.organizationId,
+      table.resourceType,
       table.name
     ),
+    uniqueIndex("mcpServerIntegrations_org_storeSource_uidx")
+      .on(table.organizationId, table.storeSourceIntegrationId)
+      .where(sql`${table.storeSourceIntegrationId} IS NOT NULL`),
+    foreignKey({
+      columns: [table.storeSourceIntegrationId],
+      foreignColumns: [table.id],
+      name: "mcpServerIntegrations_storeSourceIntegrationId_fk",
+    }).onDelete("set null"),
   ]
 );
 
@@ -601,6 +646,7 @@ export const mcpOAuthPendingAuthorizations = pgTable(
       () => mcpServerIntegrations.id,
       { onDelete: "cascade" }
     ),
+    storeSourceIntegrationId: text("store_source_integration_id"),
     name: text("name").notNull(),
     url: text("url").notNull(),
     description: text("description"),
@@ -627,6 +673,9 @@ export const mcpOAuthPendingAuthorizations = pgTable(
     index("mcpOAuthPendingAuthorizations_serverIntegrationId_idx").on(
       table.serverIntegrationId
     ),
+    index("mcpOAuthPendingAuthorizations_storeSourceIntegrationId_idx").on(
+      table.storeSourceIntegrationId
+    ),
     index("mcpOAuthPendingAuthorizations_expiresAt_idx").on(table.expiresAt),
     foreignKey({
       columns: [table.organizationId, table.serverIntegrationId],
@@ -635,6 +684,11 @@ export const mcpOAuthPendingAuthorizations = pgTable(
         mcpServerIntegrations.id,
       ],
       name: "mcpOAuthPendingAuthorizations_org_server_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.storeSourceIntegrationId],
+      foreignColumns: [mcpServerIntegrations.id],
+      name: "mcpOAuthPendingAuthorizations_storeSourceIntegrationId_fk",
     }).onDelete("cascade"),
   ]
 );
@@ -653,6 +707,8 @@ export const mcpToolIndex = pgTable(
     runtimeToolName: text("runtime_tool_name").notNull(),
     title: text("title"),
     description: text("description"),
+    actionPhrasePresent: text("action_phrase_present"),
+    actionPhrasePast: text("action_phrase_past"),
     inputSchema: jsonb("input_schema").notNull(),
     outputSchema: jsonb("output_schema"),
     annotations: jsonb("annotations"),

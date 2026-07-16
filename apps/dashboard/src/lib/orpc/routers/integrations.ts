@@ -28,19 +28,24 @@ import {
   updateLinearIntegration,
 } from "@notra/ai/integrations/linear";
 import {
-  createMcpServerIntegration,
-  deleteMcpServerIntegration,
-  getMcpServerIntegrationById,
-  getMcpServerIntegrationsByOrganization,
+  createMcpConnectionIntegration,
+  deleteMcpConnectionIntegration,
+  getMcpConnectionIntegration,
+  getMcpConnectionIntegrationsByOrganization,
   serializeMcpServerIntegration,
   testMcpServerConnection,
-  updateMcpServerIntegration,
+  updateMcpConnectionIntegration,
 } from "@notra/ai/integrations/mcp";
 import { beginMcpOAuthAuthorization } from "@notra/ai/integrations/mcp-oauth";
 import {
   McpOAuthAuthorizationError,
   McpOAuthNameConflictError,
 } from "@notra/ai/integrations/mcp-oauth-errors";
+import {
+  getLiveMcpStoreIntegrationById,
+  listLiveMcpStoreIntegrations,
+} from "@notra/ai/integrations/mcp-store";
+import { McpStoreListingUnavailableError } from "@notra/ai/integrations/mcp-store-errors";
 import { refreshMcpToolIndexForIntegration } from "@notra/ai/integrations/mcp-tool-index";
 import { deleteQstashSchedule } from "@notra/ai/qstash/triggers";
 import { db } from "@notra/db/drizzle";
@@ -79,11 +84,13 @@ import type {
   GitHubRepository,
   RepositoryOutput,
 } from "@/types/integrations";
+import { ratelimit } from "@/utils/ratelimit";
 import {
   badRequest,
   conflict,
   internalServerError,
   notFound,
+  tooManyRequests,
 } from "../utils/errors";
 
 const organizationIdInputSchema = z.object({
@@ -106,13 +113,23 @@ const mcpServerInputSchema = organizationIdInputSchema.extend({
   serverId: mcpServerIdParamSchema.shape.serverId,
 });
 
-function isUniqueConstraintError(error: unknown) {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "23505"
-  );
+async function assertMcpConnectionRateLimit(organizationId: string) {
+  const { success } = await ratelimit.mcpConnection.limit(organizationId);
+  if (!success) {
+    throw tooManyRequests(
+      "Too many connection attempts. Wait a minute and try again."
+    );
+  }
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+  if ("code" in error && error.code === "23505") {
+    return true;
+  }
+  return "cause" in error && isUniqueConstraintError(error.cause);
 }
 
 function serializeRepositoryOutput(output: {
@@ -895,13 +912,67 @@ export const integrationsRouter = {
           organizationId: input.organizationId,
         });
 
-        const integrations = await getMcpServerIntegrationsByOrganization(
-          input.organizationId
+        const [integrations, storeIntegrations] = await Promise.all([
+          getMcpConnectionIntegrationsByOrganization(input.organizationId),
+          listLiveMcpStoreIntegrations(),
+        ]);
+        const liveStoreIntegrationIds = new Set(
+          storeIntegrations.map((integration) => integration.id)
+        );
+        const customIntegrations = integrations.filter(
+          (integration) =>
+            !integration.storeSourceIntegrationId ||
+            !liveStoreIntegrationIds.has(integration.storeSourceIntegrationId)
+        );
+        return {
+          servers: customIntegrations.map(serializeMcpServerIntegration),
+          count: customIntegrations.length,
+        };
+      }),
+    storeList: baseProcedure
+      .input(organizationIdInputSchema)
+      .handler(async ({ context, input }) => {
+        await assertOrganizationAccess({
+          headers: context.headers,
+          organizationId: input.organizationId,
+        });
+
+        const [storeIntegrations, ownIntegrations] = await Promise.all([
+          listLiveMcpStoreIntegrations(),
+          getMcpConnectionIntegrationsByOrganization(input.organizationId),
+        ]);
+
+        const connectionsByStoreIntegrationId = new Map(
+          ownIntegrations.flatMap((integration) =>
+            integration.storeSourceIntegrationId
+              ? [[integration.storeSourceIntegrationId, integration] as const]
+              : []
+          )
         );
 
         return {
-          servers: integrations.map(serializeMcpServerIntegration),
-          count: integrations.length,
+          integrations: storeIntegrations.map((integration) => {
+            const connection = connectionsByStoreIntegrationId.get(
+              integration.id
+            );
+            return {
+              id: integration.id,
+              name: integration.name,
+              url: integration.url,
+              description: integration.description,
+              author: integration.author,
+              websiteUrl: integration.websiteUrl,
+              brandColor: integration.brandColor,
+              logoLightUrl: integration.logoLightUrl,
+              logoDarkUrl: integration.logoDarkUrl,
+              authType: integration.authType,
+              indexedToolCount: integration.indexedToolCount,
+              connected: Boolean(connection),
+              connection: connection
+                ? serializeMcpServerIntegration(connection)
+                : null,
+            };
+          }),
         };
       }),
     create: baseProcedure
@@ -911,16 +982,42 @@ export const integrationsRouter = {
           headers: context.headers,
           organizationId: input.organizationId,
         });
+        await assertMcpConnectionRateLimit(input.organizationId);
         await assertActiveSubscription(input.organizationId);
 
+        const storeIntegration = input.storeIntegrationId
+          ? await getLiveMcpStoreIntegrationById(input.storeIntegrationId)
+          : null;
+        if (input.storeIntegrationId && !storeIntegration) {
+          throw notFound("MCP store integration not found");
+        }
+        if (
+          storeIntegration &&
+          storeIntegration.authType !== "none" &&
+          storeIntegration.authType !== "headers"
+        ) {
+          throw badRequest("This MCP store integration requires OAuth");
+        }
+        if (storeIntegration && input.authType !== storeIntegration.authType) {
+          throw badRequest("Use the approved authentication method");
+        }
+
         try {
-          const integration = await createMcpServerIntegration({
+          const integration = await createMcpConnectionIntegration({
             authType: input.authType,
             organizationId: input.organizationId,
             userId: auth.user.id,
-            name: input.name,
-            url: input.url,
-            description: input.description ?? null,
+            name: storeIntegration?.name ?? input.name,
+            url: storeIntegration?.url ?? input.url,
+            description:
+              storeIntegration?.description ?? input.description ?? null,
+            author: storeIntegration?.author ?? null,
+            websiteUrl: storeIntegration?.websiteUrl ?? null,
+            brandColor: storeIntegration?.brandColor ?? null,
+            logoLightUrl: storeIntegration?.logoLightUrl ?? null,
+            logoDarkUrl: storeIntegration?.logoDarkUrl ?? null,
+            bannerUrl: storeIntegration?.bannerUrl ?? null,
+            storeSourceIntegrationId: storeIntegration?.id ?? null,
             headers: input.headers,
           });
 
@@ -931,6 +1028,9 @@ export const integrationsRouter = {
           }
           if (error instanceof PublicUrlValidationError) {
             throw badRequest(error.message);
+          }
+          if (error instanceof McpStoreListingUnavailableError) {
+            throw notFound(error.message);
           }
 
           throw internalServerError("Failed to create MCP server", error);
@@ -945,23 +1045,31 @@ export const integrationsRouter = {
         });
         await assertActiveSubscription(input.organizationId);
 
-        const existing = await getMcpServerIntegrationById(input.serverId);
+        const existing = await getMcpConnectionIntegration({
+          integrationId: input.serverId,
+          organizationId: input.organizationId,
+        });
         if (!existing || existing.organizationId !== input.organizationId) {
           throw notFound("MCP server not found");
         }
-
         let updated:
-          | Awaited<ReturnType<typeof updateMcpServerIntegration>>
+          | Awaited<ReturnType<typeof updateMcpConnectionIntegration>>
           | undefined;
         try {
-          updated = await updateMcpServerIntegration(input.serverId, {
-            authType: input.authType,
-            name: input.name,
-            url: input.url,
-            description: input.description,
-            headers: input.headers,
-            enabled: input.enabled,
-          });
+          updated = await updateMcpConnectionIntegration(
+            {
+              integrationId: input.serverId,
+              organizationId: input.organizationId,
+            },
+            {
+              authType: input.authType,
+              name: input.name,
+              url: input.url,
+              description: input.description,
+              headers: input.headers,
+              enabled: input.enabled,
+            }
+          );
         } catch (error) {
           if (isUniqueConstraintError(error)) {
             throw conflict("An MCP server with this name already exists");
@@ -986,6 +1094,7 @@ export const integrationsRouter = {
           headers: context.headers,
           organizationId: input.organizationId,
         });
+        await assertMcpConnectionRateLimit(input.organizationId);
         await assertActiveSubscription(input.organizationId);
 
         const baseUrl =
@@ -994,16 +1103,28 @@ export const integrationsRouter = {
           throw internalServerError("MCP OAuth is not configured");
         }
 
+        const storeIntegration = input.storeIntegrationId
+          ? await getLiveMcpStoreIntegrationById(input.storeIntegrationId)
+          : null;
+        if (input.storeIntegrationId && !storeIntegration) {
+          throw notFound("MCP store integration not found");
+        }
+        if (storeIntegration && storeIntegration.authType !== "oauth") {
+          throw badRequest("This MCP store integration does not use OAuth");
+        }
+
         try {
           return await Effect.runPromise(
             beginMcpOAuthAuthorization({
               organizationId: input.organizationId,
               userId: access.user.id,
-              name: input.name,
-              url: input.url,
-              description: input.description,
+              name: storeIntegration?.name ?? input.name,
+              url: storeIntegration?.url ?? input.url,
+              description: storeIntegration?.description ?? input.description,
+              storeSourceIntegrationId: storeIntegration?.id,
               callbackPath: input.callbackPath,
               redirectUrl: `${baseUrl}${MCP_OAUTH_CALLBACK_PATH}`,
+              resourceType: "connection",
             })
           );
         } catch (error) {
@@ -1029,9 +1150,13 @@ export const integrationsRouter = {
           headers: context.headers,
           organizationId: input.organizationId,
         });
+        await assertMcpConnectionRateLimit(input.organizationId);
         await assertActiveSubscription(input.organizationId);
 
-        const existing = await getMcpServerIntegrationById(input.serverId);
+        const existing = await getMcpConnectionIntegration({
+          integrationId: input.serverId,
+          organizationId: input.organizationId,
+        });
         if (
           !existing ||
           existing.organizationId !== input.organizationId ||
@@ -1039,7 +1164,6 @@ export const integrationsRouter = {
         ) {
           throw notFound("OAuth MCP server not found");
         }
-
         const baseUrl =
           process.env.BETTER_AUTH_URL ?? process.env.NEXT_PUBLIC_SITE_URL;
         if (!baseUrl) {
@@ -1057,6 +1181,7 @@ export const integrationsRouter = {
               description: existing.description,
               callbackPath: input.callbackPath,
               redirectUrl: `${baseUrl}${MCP_OAUTH_CALLBACK_PATH}`,
+              resourceType: "connection",
             })
           );
         } catch (error) {
@@ -1077,12 +1202,20 @@ export const integrationsRouter = {
           organizationId: input.organizationId,
         });
 
-        const existing = await getMcpServerIntegrationById(input.serverId);
+        const existing = await getMcpConnectionIntegration({
+          integrationId: input.serverId,
+          organizationId: input.organizationId,
+        });
         if (!existing || existing.organizationId !== input.organizationId) {
           throw notFound("MCP server not found");
         }
-
-        await deleteMcpServerIntegration(input.serverId);
+        const deleted = await deleteMcpConnectionIntegration({
+          integrationId: input.serverId,
+          organizationId: input.organizationId,
+        });
+        if (!deleted) {
+          throw notFound("MCP connection not found");
+        }
 
         return { success: true };
       }),
@@ -1093,19 +1226,25 @@ export const integrationsRouter = {
           headers: context.headers,
           organizationId: input.organizationId,
         });
+        await assertMcpConnectionRateLimit(input.organizationId);
         await assertActiveSubscription(input.organizationId);
 
-        const existing = await getMcpServerIntegrationById(input.serverId);
+        const existing = await getMcpConnectionIntegration({
+          integrationId: input.serverId,
+          organizationId: input.organizationId,
+        });
         if (!existing || existing.organizationId !== input.organizationId) {
           throw notFound("MCP server not found");
         }
-
         try {
           const result = await refreshMcpToolIndexForIntegration({
             organizationId: input.organizationId,
             integrationId: input.serverId,
           });
-          const refreshed = await getMcpServerIntegrationById(input.serverId);
+          const refreshed = await getMcpConnectionIntegration({
+            integrationId: input.serverId,
+            organizationId: input.organizationId,
+          });
           return {
             success: true,
             indexedToolCount: result.indexedToolCount,
@@ -1128,6 +1267,8 @@ export const integrationsRouter = {
           headers: context.headers,
           organizationId: input.organizationId,
         });
+        await assertMcpConnectionRateLimit(input.organizationId);
+        await assertActiveSubscription(input.organizationId);
 
         return testMcpServerConnection({
           url: input.url,

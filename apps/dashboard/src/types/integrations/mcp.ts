@@ -1,7 +1,10 @@
-import type { Dispatch, SetStateAction } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 import type { z } from "zod";
 import type { useMcpServerForm } from "@/lib/hooks/use-mcp-server-form";
-import type { beginMcpOAuthRequestSchema } from "@/schemas/integrations";
+import type {
+  AddMcpServerFormValues,
+  beginMcpOAuthRequestSchema,
+} from "@/schemas/integrations";
 
 export type BeginMcpOAuthRequest = z.infer<typeof beginMcpOAuthRequestSchema>;
 
@@ -20,12 +23,14 @@ export interface McpAuthenticationFieldsProps {
   form: McpServerFormApi;
   headerRowIds: string[];
   invalidateTestResult: () => void;
+  lockAuthType?: boolean;
   setHeaderRowIds: Dispatch<SetStateAction<string[]>>;
 }
 
 export interface McpServerDetailsFieldsProps {
   form: McpServerFormApi;
   invalidateTestResult: () => void;
+  readOnly?: boolean;
 }
 
 export interface McpDialogFooterProps {
@@ -58,6 +63,93 @@ export interface AddMcpServerDialogProps {
   organizationId: string;
   onSuccess?: () => void;
   trigger?: React.ReactNode;
+  initialValues?: Partial<AddMcpServerFormValues>;
+  storeIntegrationId?: string;
+  logoLightUrl?: string | null;
+  logoDarkUrl?: string | null;
+}
+
+export interface McpStoreIntegration {
+  id: string;
+  name: string;
+  url: string;
+  description: string | null;
+  author: string | null;
+  websiteUrl: string | null;
+  brandColor: string | null;
+  logoLightUrl: string | null;
+  logoDarkUrl: string | null;
+  authType: string;
+  indexedToolCount: number;
+  connected: boolean;
+  connection: McpServer | null;
+}
+
+export interface ConnectedMcpStoreIntegration extends McpStoreIntegration {
+  connection: McpServer;
+}
+
+export interface StoreIntegrationsSectionProps {
+  organizationId: string;
+}
+
+export interface ManageStoreIntegrationDialogProps {
+  integration: ConnectedMcpStoreIntegration;
+  onDisconnected: () => void;
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+  organizationId: string;
+}
+
+export interface McpCredentialHeaderRow {
+  id: string;
+  name: string;
+  value: string;
+}
+
+export interface McpStoreConnectionUpdate {
+  authType?: "headers";
+  enabled?: boolean;
+  headers?: Record<string, string>;
+}
+
+export interface McpConnectionDetailProps {
+  children: ReactNode;
+  label: string;
+}
+
+export interface McpConnectionSummaryProps {
+  connection: McpServer;
+}
+
+export interface McpCredentialEditorProps {
+  headerRows: McpCredentialHeaderRow[];
+  onUpdate: () => void;
+  setHeaderRows: Dispatch<SetStateAction<McpCredentialHeaderRow[]>>;
+  updating: boolean;
+}
+
+export interface McpConnectionActionsProps {
+  connection: McpServer;
+  onDisconnect: () => void;
+  onReauthorize: () => void;
+  onRefresh: () => void;
+  onToggle: () => void;
+  reauthorizing: boolean;
+  refreshing: boolean;
+  updating: boolean;
+}
+
+export interface McpDisconnectDialogProps {
+  disconnecting: boolean;
+  integrationName: string;
+  onDisconnect: () => void;
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+}
+
+export interface StoreIntegrationDialogLogoProps {
+  integration: ConnectedMcpStoreIntegration;
 }
 
 export interface McpServerCardProps {

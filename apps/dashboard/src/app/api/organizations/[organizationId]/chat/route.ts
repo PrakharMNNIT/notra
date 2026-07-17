@@ -1,5 +1,8 @@
 import { calculateAiCreditCostCents } from "@notra/ai/billing/ai-credit-cost";
-import { autumn } from "@notra/ai/billing/autumn";
+import {
+  allowUnmeteredAiInDevelopment,
+  autumn,
+} from "@notra/ai/billing/autumn";
 import { FEATURES } from "@notra/ai/billing/features";
 import { shouldApplyMarkup } from "@notra/ai/billing/token-pricing";
 import { startChatAbortPolling } from "@notra/ai/chat/abort-polling";
@@ -36,6 +39,7 @@ import { NextResponse } from "next/server";
 import { withOrganizationAuth } from "@/lib/auth/organization";
 import { buildStandaloneChatTelemetryMetadata } from "@/lib/tcc";
 import type { RouteContext } from "@/types/api/routes";
+import { enforceChatGenerationRatelimit } from "@/utils/chat-ratelimit";
 
 export const maxDuration = 300;
 
@@ -61,6 +65,24 @@ export const POST = withEvlog(async function POST(
 
     if (!auth.success) {
       return auth.response;
+    }
+
+    const body = await request.json().catch(() => null);
+    const parseResult = standaloneChatRequestSchema.safeParse(body);
+
+    if (!parseResult.success) {
+      return NextResponse.json(
+        { error: "Invalid request body", details: parseResult.error.issues },
+        { status: 400 }
+      );
+    }
+
+    const rateLimited = await enforceChatGenerationRatelimit(
+      organizationId,
+      auth.context.user.id
+    );
+    if (rateLimited) {
+      return rateLimited;
     }
 
     let useMarkup = false;
@@ -95,15 +117,10 @@ export const POST = withEvlog(async function POST(
       }
 
       useMarkup = shouldApplyMarkup(checkData?.balance ?? null);
-    }
-
-    const body = await request.json();
-    const parseResult = standaloneChatRequestSchema.safeParse(body);
-
-    if (!parseResult.success) {
+    } else if (!allowUnmeteredAiInDevelopment) {
       return NextResponse.json(
-        { error: "Invalid request body", details: parseResult.error.issues },
-        { status: 400 }
+        { error: "Billing service is unavailable", code: "BILLING_ERROR" },
+        { status: 503 }
       );
     }
 
@@ -492,9 +509,6 @@ async function createDirectStandaloneChatResponse({
         }
         if (InvalidToolInputError.isInstance(error)) {
           return "The assistant called a tool with invalid inputs and couldn't recover. Please try sending your message again.";
-        }
-        if (error instanceof Error) {
-          return error.message;
         }
         return "An error occurred while processing your request.";
       },

@@ -1,12 +1,18 @@
+import { CHAT_GENERATION_RATE_LIMIT } from "@notra/ai/constants/rate-limits";
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 import type { Context } from "hono";
+import { getOrganizationId } from "./auth";
 
 const redis = Redis.fromEnv();
 
 export const RATE_LIMITS = {
   postGeneration: { requests: 10, window: "1 minute" },
   brandGeneration: { requests: 5, window: "1 minute" },
+  chatGeneration: {
+    requests: CHAT_GENERATION_RATE_LIMIT.requests,
+    window: CHAT_GENERATION_RATE_LIMIT.windowLabel,
+  },
   integrationCreate: { requests: 20, window: "1 minute" },
   postUpdate: { requests: 60, window: "1 minute" },
 } as const;
@@ -27,6 +33,15 @@ export const ratelimit = {
       "1m"
     ),
   }),
+  chatGeneration: new Ratelimit({
+    redis,
+    analytics: true,
+    prefix: "ratelimit:chat-generation",
+    limiter: Ratelimit.slidingWindow(
+      CHAT_GENERATION_RATE_LIMIT.requests,
+      CHAT_GENERATION_RATE_LIMIT.window
+    ),
+  }),
   integrationCreate: new Ratelimit({
     redis,
     analytics: true,
@@ -44,10 +59,21 @@ export const ratelimit = {
   }),
 };
 
-function getRatelimitKey(c: Context): string {
-  const auth = c.get("auth") as { keyId?: string } | undefined;
-  if (auth?.keyId) {
-    return auth.keyId;
+type RatelimitScope = "credential" | "organization";
+
+function getRatelimitKey(c: Context, scope: RatelimitScope): string {
+  const auth = c.get("auth");
+  if (auth) {
+    if (scope === "organization") {
+      const organizationId = getOrganizationId(c);
+      if (organizationId) {
+        return organizationId;
+      }
+    }
+
+    if (auth.keyId) {
+      return auth.keyId;
+    }
   }
 
   const forwardedFor = c.req.header("x-forwarded-for");
@@ -74,8 +100,12 @@ function setRatelimitHeaders(
   return resetSeconds;
 }
 
-export async function enforceRatelimit(c: Context, limiter: Ratelimit) {
-  const result = await limiter.limit(getRatelimitKey(c));
+export async function enforceRatelimit(
+  c: Context,
+  limiter: Ratelimit,
+  scope: RatelimitScope = "credential"
+) {
+  const result = await limiter.limit(getRatelimitKey(c, scope));
   const resetSeconds = setRatelimitHeaders(c, result);
 
   if (result.success) {

@@ -1,5 +1,8 @@
 import { calculateAiCreditCostCents } from "@notra/ai/billing/ai-credit-cost";
-import { autumn } from "@notra/ai/billing/autumn";
+import {
+  allowUnmeteredAiInDevelopment,
+  autumn,
+} from "@notra/ai/billing/autumn";
 import { FEATURES } from "@notra/ai/billing/features";
 import { shouldApplyMarkup } from "@notra/ai/billing/token-pricing";
 import { useLogger, withEvlog } from "@notra/ai/evlog";
@@ -22,6 +25,7 @@ import { NextResponse } from "next/server";
 import { withOrganizationAuth } from "@/lib/auth/organization";
 import { chatRequestSchema } from "@/schemas/content";
 import type { RouteContext } from "@/types/api/routes";
+import { enforceChatGenerationRatelimit } from "@/utils/chat-ratelimit";
 
 export const maxDuration = 60;
 
@@ -46,6 +50,24 @@ export const POST = withEvlog(async function POST(
 
     if (!auth.success) {
       return auth.response;
+    }
+
+    const body = await request.json().catch(() => null);
+    const parseResult = chatRequestSchema.safeParse(body);
+
+    if (!parseResult.success) {
+      return NextResponse.json(
+        { error: "Invalid request body", details: parseResult.error.issues },
+        { status: 400 }
+      );
+    }
+
+    const rateLimited = await enforceChatGenerationRatelimit(
+      organizationId,
+      auth.context.user.id
+    );
+    if (rateLimited) {
+      return rateLimited;
     }
 
     let useMarkup = false;
@@ -92,19 +114,15 @@ export const POST = withEvlog(async function POST(
 
       useMarkup = shouldApplyMarkup(checkData?.balance ?? null);
     } else {
+      if (!allowUnmeteredAiInDevelopment) {
+        return NextResponse.json(
+          { error: "Billing service is unavailable", code: "BILLING_ERROR" },
+          { status: 503 }
+        );
+      }
       console.log(
         "[Autumn] Skipping billing check - AUTUMN_SECRET_KEY not configured",
         { requestId }
-      );
-    }
-
-    const body = await request.json();
-    const parseResult = chatRequestSchema.safeParse(body);
-
-    if (!parseResult.success) {
-      return NextResponse.json(
-        { error: "Invalid request body", details: parseResult.error.issues },
-        { status: 400 }
       );
     }
 
@@ -224,9 +242,6 @@ export const POST = withEvlog(async function POST(
     return stream.toUIMessageStreamResponse({
       onError: (error) => {
         console.error("[Content Chat] Stream error:", { requestId, error });
-        if (error instanceof Error) {
-          return error.message;
-        }
         return "An error occurred while processing your request.";
       },
     });

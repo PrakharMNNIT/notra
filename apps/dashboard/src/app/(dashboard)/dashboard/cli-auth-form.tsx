@@ -25,6 +25,10 @@ import { Loader2Icon } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/button";
+import {
+  CLI_API_KEY_TTL_DAYS,
+  CLI_VERIFICATION_CODE_PATTERN,
+} from "@/lib/cli-auth/constants";
 import { detectPlatform } from "@/lib/cli-auth/platform";
 import type { CliAuthFormProps } from "@/types/cli-auth/form";
 
@@ -47,6 +51,7 @@ export function CliAuthForm({ sessionId, organizations }: CliAuthFormProps) {
   );
   const defaultName = platform ? `Notra CLI on ${platform}` : "";
   const [editedName, setEditedName] = useState<string | null>(null);
+  const [verificationCode, setVerificationCode] = useState("");
   const [authorizationStatus, setAuthorizationStatus] = useState<
     "idle" | "pending" | "success"
   >("idle");
@@ -72,7 +77,11 @@ export function CliAuthForm({ sessionId, organizations }: CliAuthFormProps) {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ organizationId, name: name.trim() }),
+          body: JSON.stringify({
+            organizationId,
+            name: name.trim(),
+            verificationCode,
+          }),
           signal: controller.signal,
         }
       );
@@ -135,7 +144,10 @@ export function CliAuthForm({ sessionId, organizations }: CliAuthFormProps) {
 
   const isPending = authorizationStatus === "pending";
   const canSubmit =
-    organizationId !== "" && name.trim().length > 0 && !isPending;
+    organizationId !== "" &&
+    name.trim().length > 0 &&
+    CLI_VERIFICATION_CODE_PATTERN.test(verificationCode) &&
+    !isPending;
 
   return (
     <form
@@ -221,6 +233,25 @@ export function CliAuthForm({ sessionId, organizations }: CliAuthFormProps) {
       </div>
 
       <div className="grid gap-2">
+        <Label htmlFor="cli-auth-verification-code">Verification code</Label>
+        <Input
+          autoComplete="one-time-code"
+          disabled={isPending}
+          id="cli-auth-verification-code"
+          maxLength={9}
+          onChange={(event) =>
+            setVerificationCode(event.target.value.toUpperCase())
+          }
+          placeholder="ABCD-1234"
+          value={verificationCode}
+        />
+        <p className="text-muted-foreground text-xs">
+          Enter the code shown by <code>notra auth login</code> in your
+          terminal. Never authorize a code someone else sent you.
+        </p>
+      </div>
+
+      <div className="grid gap-2">
         <Label htmlFor="cli-auth-name">Key name</Label>
         <Input
           disabled={isPending}
@@ -247,7 +278,8 @@ export function CliAuthForm({ sessionId, organizations }: CliAuthFormProps) {
       </Button>
 
       <p className="text-center text-muted-foreground text-xs">
-        The key expires in 90 days. You can revoke it at any time from Settings.
+        The key expires in {CLI_API_KEY_TTL_DAYS} days. You can revoke it at any
+        time from Settings.
       </p>
     </form>
   );

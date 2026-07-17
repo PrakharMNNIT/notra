@@ -3,6 +3,7 @@ import { autumn } from "@notra/ai/billing/autumn";
 import { FEATURES } from "@notra/ai/billing/features";
 import { startChatAbortPolling } from "@notra/ai/chat/abort-polling";
 import {
+  claimChatWorkflowRequest,
   clearActiveChatStream,
   clearChatAbortFlag,
   getChatStreamChannelName,
@@ -28,9 +29,11 @@ import type {
 } from "@notra/ai/types/chat";
 import type { StandaloneChatContextItem } from "@notra/ai/types/standalone-chat";
 import { buildChatFinishMetadata } from "@notra/ai/utils/chat";
+import { verifyChatWorkflowPayload } from "@notra/ai/utils/chat-workflow-auth";
 import { serve } from "@upstash/workflow/hono";
 import type { UIMessageChunk } from "ai";
 import { nanoid } from "nanoid";
+import { WORKFLOW_SERVE_ENV } from "../../constants/workflow";
 
 export const chatWorkflowHandler = serve<ChatWorkflowPayload>(
   async (context) => {
@@ -47,6 +50,16 @@ export const chatWorkflowHandler = serve<ChatWorkflowPayload>(
       return;
     }
 
+    const workflowSecret = process.env.QSTASH_TOKEN;
+    if (
+      !workflowSecret ||
+      !verifyChatWorkflowPayload(parseResult.data, workflowSecret)
+    ) {
+      console.error("[Chat Workflow] Payload authorization failed");
+      await context.cancel();
+      return;
+    }
+
     const {
       requestId,
       organizationId,
@@ -59,6 +72,20 @@ export const chatWorkflowHandler = serve<ChatWorkflowPayload>(
       thinkingLevel,
       timezone,
     } = parseResult.data;
+
+    const requestClaimed = await context.run(
+      "claim-chat-workflow-request",
+      () => claimChatWorkflowRequest(requestId)
+    );
+    if (!requestClaimed) {
+      console.error("[Chat Workflow] Duplicate or unclaimable request", {
+        requestId,
+        organizationId,
+        chatId,
+      });
+      await context.cancel();
+      return;
+    }
 
     const messages = await context.run("load-chat-history", () =>
       loadChatHistory(organizationId, chatId)
@@ -90,7 +117,65 @@ export const chatWorkflowHandler = serve<ChatWorkflowPayload>(
         chatId,
         channelName,
       });
-      await clearActiveChatStream(organizationId, chatId);
+      await clearActiveChatStream(organizationId, chatId, latestMessage.id);
+      await context.cancel();
+      return;
+    }
+
+    const creditCheck = await context.run(
+      "recheck-ai-credit-balance",
+      async () => {
+        if (!autumn) {
+          return { allowed: true, unavailable: false };
+        }
+
+        try {
+          const result = await autumn.check({
+            customerId: organizationId,
+            featureId: FEATURES.AI_CREDITS,
+            requiredBalance: 1,
+          });
+          return { allowed: Boolean(result?.allowed), unavailable: false };
+        } catch (error) {
+          console.error("[Chat Workflow] AI credit check failed", {
+            requestId,
+            organizationId,
+            chatId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return { allowed: false, unavailable: true };
+        }
+      }
+    );
+
+    if (!creditCheck.allowed) {
+      console.warn("[Chat Workflow] AI credit check rejected generation", {
+        requestId,
+        organizationId,
+        chatId,
+        unavailable: creditCheck.unavailable,
+      });
+      try {
+        await channel.emit("ai.chunk", {
+          type: "error",
+          errorText: creditCheck.unavailable
+            ? "Unable to verify usage limits. Please try again."
+            : "Usage limit reached.",
+        });
+        await channel.emit("ai.chunk", {
+          type: "finish",
+          finishReason: "error",
+        });
+      } catch (error) {
+        console.error("[Chat Workflow] Failed to emit billing error", {
+          requestId,
+          organizationId,
+          chatId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        await clearActiveChatStream(organizationId, chatId, latestMessage.id);
+      }
       await context.cancel();
       return;
     }
@@ -266,7 +351,9 @@ export const chatWorkflowHandler = serve<ChatWorkflowPayload>(
             const saved = await replaceChatHistory(
               organizationId,
               chatId,
-              responseMessages
+              responseMessages,
+              undefined,
+              latestMessage.id
             );
             if (!saved) {
               console.warn(
@@ -275,14 +362,15 @@ export const chatWorkflowHandler = serve<ChatWorkflowPayload>(
               );
             }
           } finally {
-            await clearActiveChatStream(organizationId, chatId);
+            await clearActiveChatStream(
+              organizationId,
+              chatId,
+              latestMessage.id
+            );
           }
         },
         onError: (error) => {
           console.error("[Chat Workflow] Stream error:", { requestId, error });
-          if (error instanceof Error) {
-            return error.message;
-          }
           return "An error occurred while processing your request.";
         },
       });
@@ -331,10 +419,7 @@ export const chatWorkflowHandler = serve<ChatWorkflowPayload>(
         if (channel) {
           await channel.emit("ai.chunk", {
             type: "error",
-            errorText:
-              error instanceof Error
-                ? error.message
-                : "An error occurred while processing your request.",
+            errorText: "An error occurred while processing your request.",
           });
           await channel.emit("ai.chunk", {
             type: "finish",
@@ -342,16 +427,13 @@ export const chatWorkflowHandler = serve<ChatWorkflowPayload>(
           });
         }
       }
-
-      if (!isAbort) {
-        throw error;
-      }
     } finally {
       stopAbortPolling?.();
       await Promise.allSettled([
-        clearActiveChatStream(organizationId, chatId),
+        clearActiveChatStream(organizationId, chatId, latestMessage.id),
         clearChatAbortFlag(organizationId, chatId, latestMessage.id),
       ]);
     }
-  }
+  },
+  { env: WORKFLOW_SERVE_ENV }
 );

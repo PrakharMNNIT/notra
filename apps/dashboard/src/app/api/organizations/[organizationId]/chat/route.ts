@@ -6,6 +6,7 @@ import {
 import { FEATURES } from "@notra/ai/billing/features";
 import { shouldApplyMarkup } from "@notra/ai/billing/token-pricing";
 import { startChatAbortPolling } from "@notra/ai/chat/abort-polling";
+import { getChatRedis } from "@notra/ai/chat/config";
 import {
   clearActiveChatStream,
   clearChatAbortFlag,
@@ -27,10 +28,14 @@ import { getBaseUrl } from "@notra/ai/qstash/triggers";
 import { realtime } from "@notra/ai/realtime";
 import { standaloneChatRequestSchema } from "@notra/ai/schemas/chat";
 import type { StandaloneChatContextItem } from "@notra/ai/schemas/standalone-chat";
-import type { ChatUsageSnapshot } from "@notra/ai/types/chat";
+import type {
+  ChatUsageSnapshot,
+  UnsignedChatWorkflowPayload,
+} from "@notra/ai/types/chat";
 import type { ValidatedIntegration } from "@notra/ai/types/orchestration";
 import type { TccMetadata } from "@notra/ai/types/tcc";
 import { buildChatFinishMetadata } from "@notra/ai/utils/chat";
+import { signChatWorkflowPayload } from "@notra/ai/utils/chat-workflow-auth";
 import { InvalidToolInputError, NoSuchToolError, type UIMessage } from "ai";
 import type { CheckResponse } from "autumn-js";
 import { nanoid } from "nanoid";
@@ -51,6 +56,7 @@ export const POST = withEvlog(async function POST(
   const log = useLogger();
   let cleanupOrganizationId: string | null = null;
   let cleanupChatId: string | null = null;
+  let cleanupStreamId: string | null = null;
 
   try {
     const { organizationId } = await params;
@@ -154,13 +160,26 @@ export const POST = withEvlog(async function POST(
       return NextResponse.json({ error: "Chat not found" }, { status: 404 });
     }
 
+    const streamAcquired = await setActiveChatStream(
+      organizationId,
+      chatId,
+      latestMessage.id
+    );
+    if (!streamAcquired) {
+      return NextResponse.json(
+        { error: "A response is already being generated for this chat" },
+        { status: 409 }
+      );
+    }
+    cleanupStreamId = latestMessage.id;
+
     const [historySaved] = await Promise.all([
       replaceChatHistory(organizationId, chatId, messages),
-      setActiveChatStream(organizationId, chatId, latestMessage.id),
       clearLastResponseStopped(organizationId, chatId),
     ]);
 
     if (!historySaved) {
+      await clearActiveChatStream(organizationId, chatId, latestMessage.id);
       return NextResponse.json({ error: "Chat not found" }, { status: 404 });
     }
 
@@ -196,20 +215,32 @@ export const POST = withEvlog(async function POST(
       });
     }
 
+    const workflowPayload: UnsignedChatWorkflowPayload = {
+      requestId,
+      organizationId,
+      chatId,
+      userId: auth.context.user.id,
+      userEmail: auth.context.user.email,
+      context,
+      useMarkup,
+      model: parseResult.data.model,
+      enableThinking: parseResult.data.enableThinking,
+      thinkingLevel: parseResult.data.thinkingLevel,
+      timezone: parseResult.data.timezone,
+    };
+    const workflowSecret = process.env.QSTASH_TOKEN;
+    if (!workflowSecret) {
+      throw new Error("QSTASH_TOKEN is not defined");
+    }
+
     await getWorkflowClient().trigger({
       url: `${getBaseUrl()}/api/workflows/chat`,
       body: {
-        requestId,
-        organizationId,
-        chatId,
-        userId: auth.context.user.id,
-        userEmail: auth.context.user.email,
-        context,
-        useMarkup,
-        model: parseResult.data.model,
-        enableThinking: parseResult.data.enableThinking,
-        thinkingLevel: parseResult.data.thinkingLevel,
-        timezone: parseResult.data.timezone,
+        ...workflowPayload,
+        workflowSignature: signChatWorkflowPayload(
+          workflowPayload,
+          workflowSecret
+        ),
       },
     });
 
@@ -218,10 +249,12 @@ export const POST = withEvlog(async function POST(
       { status: 202, headers: { "X-Chat-Id": chatId } }
     );
   } catch (e) {
-    if (cleanupOrganizationId && cleanupChatId) {
-      await clearActiveChatStream(cleanupOrganizationId, cleanupChatId).catch(
-        () => undefined
-      );
+    if (cleanupOrganizationId && cleanupChatId && cleanupStreamId) {
+      await clearActiveChatStream(
+        cleanupOrganizationId,
+        cleanupChatId,
+        cleanupStreamId
+      ).catch(() => undefined);
     }
     const errorMessage = e instanceof Error ? e.message : String(e);
     console.error("[Standalone Chat] Error:", {
@@ -249,7 +282,7 @@ function canUseUpstashWorkflowStreaming() {
     return false;
   }
 
-  if (!(realtime && process.env.QSTASH_TOKEN)) {
+  if (!(realtime && process.env.QSTASH_TOKEN && getChatRedis())) {
     return false;
   }
 
@@ -341,7 +374,7 @@ async function createDirectStandaloneChatResponse({
     abortSignal?.removeEventListener("abort", onRequestAbort);
     await Promise.allSettled([
       clearChatAbortFlag(organizationId, chatId, streamId),
-      clearActiveChatStream(organizationId, chatId),
+      clearActiveChatStream(organizationId, chatId, streamId),
     ]);
   };
 
@@ -478,7 +511,9 @@ async function createDirectStandaloneChatResponse({
           const saved = await replaceChatHistory(
             organizationId,
             chatId,
-            responseMessages
+            responseMessages,
+            undefined,
+            streamId
           );
           if (!saved) {
             console.warn(

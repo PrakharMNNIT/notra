@@ -4,7 +4,9 @@ import { generateText, type UIMessage } from "ai";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   CHAT_ABORT_FLAG_TTL_SECONDS,
+  CHAT_ACTIVE_STREAM_TTL_SECONDS,
   CHAT_LAST_STOPPED_TTL_SECONDS,
+  CHAT_WORKFLOW_REQUEST_TTL_SECONDS,
 } from "../constants/chat";
 import { gateway } from "../gateway";
 import { withGatewayAutomaticCaching } from "../provider-options";
@@ -16,6 +18,11 @@ import type {
 import { normalizeChatTitle, sortChatSessions } from "../utils/chat";
 import { buildExperimentalTelemetry } from "../utils/tcc";
 import { getChatRedis } from "./config";
+
+const CLEAR_ACTIVE_STREAM_IF_MATCHES_SCRIPT =
+  'if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) end return 0';
+const REFRESH_ACTIVE_STREAM_IF_MATCHES_SCRIPT =
+  'if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("EXPIRE", KEYS[1], ARGV[2]) end return 0';
 
 function activeStreamKey(organizationId: string, chatId: string) {
   return `chat:stream:${organizationId}:${chatId}`;
@@ -31,6 +38,10 @@ function abortFlagKey(
 
 function lastStoppedKey(organizationId: string, chatId: string) {
   return `chat:lastStopped:${organizationId}:${chatId}`;
+}
+
+function workflowRequestKey(requestId: string) {
+  return `chat:workflow-request:${requestId}`;
 }
 
 export function getChatStreamChannelName(
@@ -105,7 +116,8 @@ async function upsertChatSession(
   chatId: string,
   messages: UIMessage[],
   mode: "append" | "replace",
-  externalChannelId?: ExternalChannelId | null
+  externalChannelId?: ExternalChannelId | null,
+  expectedLastMessageId?: string
 ) {
   if (mode === "append") {
     const insertedOrUpdated = await db
@@ -153,6 +165,10 @@ async function upsertChatSession(
     return false;
   }
 
+  if (!existingRow && expectedLastMessageId) {
+    return false;
+  }
+
   const title =
     existingRow?.title ??
     normalizeChatTitle(getChatTitle(messages) ?? "New chat");
@@ -173,7 +189,10 @@ async function upsertChatSession(
         and(
           eq(chatSessions.id, chatId),
           eq(chatSessions.organizationId, organizationId),
-          isNull(chatSessions.deletedAt)
+          isNull(chatSessions.deletedAt),
+          expectedLastMessageId
+            ? sql`${chatSessions.messages}->-1->>'id' = ${expectedLastMessageId}`
+            : undefined
         )
       )
       .returning({ id: chatSessions.id });
@@ -215,14 +234,16 @@ export async function replaceChatHistory(
   organizationId: string,
   chatId: string,
   messages: UIMessage[],
-  externalChannelId?: ExternalChannelId | null
+  externalChannelId?: ExternalChannelId | null,
+  expectedLastMessageId?: string
 ): Promise<boolean> {
   return upsertChatSession(
     organizationId,
     chatId,
     messages,
     "replace",
-    externalChannelId
+    externalChannelId,
+    expectedLastMessageId
   );
 }
 
@@ -419,27 +440,80 @@ export async function getActiveChatStream(
   return typeof streamId === "string" && streamId.length > 0 ? streamId : null;
 }
 
+export async function claimChatWorkflowRequest(
+  requestId: string
+): Promise<boolean> {
+  const redis = getChatRedis();
+  if (!redis) {
+    return false;
+  }
+
+  const result = await redis.set(workflowRequestKey(requestId), "1", {
+    ex: CHAT_WORKFLOW_REQUEST_TTL_SECONDS,
+    nx: true,
+  });
+  return result === "OK";
+}
+
 export async function setActiveChatStream(
   organizationId: string,
   chatId: string,
   streamId: string
-) {
+): Promise<boolean> {
   const redis = getChatRedis();
   if (!redis) {
-    return;
+    return true;
   }
-  await redis.set(activeStreamKey(organizationId, chatId), streamId);
+  const result = await redis.set(
+    activeStreamKey(organizationId, chatId),
+    streamId,
+    {
+      ex: CHAT_ACTIVE_STREAM_TTL_SECONDS,
+      nx: true,
+    }
+  );
+  return result === "OK";
 }
 
 export async function clearActiveChatStream(
   organizationId: string,
-  chatId: string
-) {
+  chatId: string,
+  expectedStreamId?: string
+): Promise<boolean> {
   const redis = getChatRedis();
   if (!redis) {
-    return;
+    return true;
   }
-  await redis.del(activeStreamKey(organizationId, chatId));
+
+  const key = activeStreamKey(organizationId, chatId);
+  if (expectedStreamId) {
+    const result = await redis.eval<[string], number>(
+      CLEAR_ACTIVE_STREAM_IF_MATCHES_SCRIPT,
+      [key],
+      [expectedStreamId]
+    );
+    return result === 1;
+  }
+
+  return (await redis.del(key)) > 0;
+}
+
+export async function refreshActiveChatStream(
+  organizationId: string,
+  chatId: string,
+  streamId: string
+): Promise<boolean> {
+  const redis = getChatRedis();
+  if (!redis) {
+    return true;
+  }
+
+  const result = await redis.eval<[string, number], number>(
+    REFRESH_ACTIVE_STREAM_IF_MATCHES_SCRIPT,
+    [activeStreamKey(organizationId, chatId)],
+    [streamId, CHAT_ACTIVE_STREAM_TTL_SECONDS]
+  );
+  return result === 1;
 }
 
 export async function setChatAbortFlag(
@@ -593,9 +667,9 @@ export async function purgeOrganizationChatData(
   organizationId: string
 ): Promise<{ fileUrls: string[] }> {
   const rows = await db
-    .select({ messages: chatSessions.messages })
-    .from(chatSessions)
-    .where(eq(chatSessions.organizationId, organizationId));
+    .delete(chatSessions)
+    .where(eq(chatSessions.organizationId, organizationId))
+    .returning({ messages: chatSessions.messages });
 
   const fileUrls: string[] = [];
 
@@ -603,10 +677,6 @@ export async function purgeOrganizationChatData(
     const messages = row.messages as UIMessage[];
     fileUrls.push(...collectFileUrlsFromMessages(messages));
   }
-
-  await db
-    .delete(chatSessions)
-    .where(eq(chatSessions.organizationId, organizationId));
 
   return { fileUrls };
 }
@@ -638,7 +708,7 @@ export async function deleteChatSession(
   if (redis) {
     const streamId = await getActiveChatStream(organizationId, chatId);
     await Promise.allSettled([
-      clearActiveChatStream(organizationId, chatId),
+      clearActiveChatStream(organizationId, chatId, streamId ?? undefined),
       redis.del(lastStoppedKey(organizationId, chatId)),
       ...(streamId ? [setChatAbortFlag(organizationId, chatId, streamId)] : []),
     ]);

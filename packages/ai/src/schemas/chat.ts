@@ -16,6 +16,8 @@ export const chatModelSchema = z.enum([
 
 export const thinkingLevelSchema = z.enum(["off", "low", "medium", "high"]);
 
+export const chatIdSchema = z.uuid();
+
 export const externalChannelSourceSchema = z.enum([
   "discord",
   "slack",
@@ -75,7 +77,7 @@ export const uiMessageSchema = z.object({
 }) as unknown as z.ZodType<UIMessage>;
 
 export const standaloneChatRequestSchema = z.object({
-  chatId: z.string().min(1).optional(),
+  chatId: chatIdSchema.optional(),
   messages: z.array(uiMessageSchema).min(1).max(UI_MESSAGES_MAX),
   context: z.array(standaloneChatContextSchema).optional(),
   model: chatModelSchema.optional(),
@@ -99,6 +101,7 @@ export const updateChatSessionSchema = z
   );
 
 export const chatWorkflowPayloadSchema = z.object({
+  workflowSignature: z.string().regex(/^[a-f0-9]{64}$/),
   requestId: z.string().min(1),
   organizationId: z.string().min(1),
   chatId: z.string().min(1),

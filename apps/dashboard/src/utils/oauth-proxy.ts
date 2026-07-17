@@ -1,8 +1,9 @@
-import {
-  OAUTH_CLIENT_REGISTRATION_DEFAULT_SCOPES,
-  OAUTH_OFFLINE_ACCESS_SCOPE,
-} from "@/constants/oauth";
 import { auth } from "@/lib/auth/server";
+import {
+  getDynamicClientRegistrationScope,
+  hasOnlyLoopbackRedirectUris,
+  pickDynamicClientMetadata,
+} from "@/utils/oauth-client-registration";
 
 const AUTH_ROUTE_PREFIX = "/api/auth";
 const INTERNAL_AUTH_ORIGIN = "http://notra.internal";
@@ -45,42 +46,32 @@ export function buildOAuthForwardedHeaders(
   return headers;
 }
 
-const REGISTRATION_SCOPE_SEPARATOR = " ";
-const REGISTRATION_SCOPE_SPLIT_REGEX = /\s+/;
-
-function ensureOfflineAccessScope(scope: string) {
-  const scopes = scope.split(REGISTRATION_SCOPE_SPLIT_REGEX).filter(Boolean);
-
-  if (!scopes.includes(OAUTH_OFFLINE_ACCESS_SCOPE)) {
-    scopes.push(OAUTH_OFFLINE_ACCESS_SCOPE);
-  }
-
-  return scopes.join(REGISTRATION_SCOPE_SEPARATOR);
-}
-
-function withDefaultRegistrationScopes(body: ArrayBuffer) {
+function secureRegistrationBody(body: ArrayBuffer) {
   try {
     const payload = JSON.parse(new TextDecoder().decode(body));
 
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-      return body;
+      return null;
     }
 
-    const requestedScope =
-      "scope" in payload && typeof payload.scope === "string"
-        ? payload.scope
-        : OAUTH_CLIENT_REGISTRATION_DEFAULT_SCOPES.join(
-            REGISTRATION_SCOPE_SEPARATOR
-          );
+    if (!hasOnlyLoopbackRedirectUris(payload)) {
+      return null;
+    }
+
+    const scope = getDynamicClientRegistrationScope(payload);
+    if (!scope) {
+      return null;
+    }
 
     return new TextEncoder().encode(
       JSON.stringify({
-        ...payload,
-        scope: ensureOfflineAccessScope(requestedScope),
+        ...pickDynamicClientMetadata(payload),
+        scope,
+        token_endpoint_auth_method: "none",
       })
     ).buffer;
   } catch {
-    return body;
+    return null;
   }
 }
 
@@ -101,8 +92,19 @@ export async function proxyOAuthRequest(request: Request, pathname: string) {
       : await request.arrayBuffer();
   const body =
     rawBody && pathname === REGISTER_PATH
-      ? withDefaultRegistrationScopes(rawBody)
+      ? secureRegistrationBody(rawBody)
       : rawBody;
+
+  if (rawBody && pathname === REGISTER_PATH && !body) {
+    return Response.json(
+      {
+        error: "invalid_client_metadata",
+        error_description:
+          "Dynamic clients must use HTTP loopback redirect URIs and supported scopes",
+      },
+      { status: 400 }
+    );
+  }
 
   const response = await auth.handler(
     new Request(targetUrl, {
@@ -115,7 +117,7 @@ export async function proxyOAuthRequest(request: Request, pathname: string) {
 
   const headers = new Headers(response.headers);
 
-  if (pathname === TOKEN_PATH) {
+  if (pathname === TOKEN_PATH || pathname === REGISTER_PATH) {
     headers.set("Cache-Control", "no-store");
     headers.set("Pragma", "no-cache");
   }

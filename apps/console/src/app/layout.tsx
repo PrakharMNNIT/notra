@@ -2,9 +2,14 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Noto_Sans } from "next/font/google";
 import "@/styles/globals.css";
 
+import { ImpersonationBanner } from "@/components/auth/impersonation-banner";
 import { Providers } from "@/components/providers";
+import { getRequestSession } from "@/lib/auth/session";
 
-const notoSans = Noto_Sans({ variable: "--font-sans" });
+const notoSans = Noto_Sans({
+  subsets: ["latin"],
+  variable: "--font-sans",
+});
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -27,11 +32,14 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const { session, user } = await getRequestSession();
+  const isImpersonating = Boolean(session?.impersonatedBy);
+
   return (
     <html
       className={`${notoSans.variable} dark:scheme-dark`}
@@ -41,7 +49,14 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <Providers>{children}</Providers>
+        <Providers>
+          <div className="flex h-svh flex-col overflow-hidden">
+            {isImpersonating && user ? (
+              <ImpersonationBanner email={user.email} name={user.name} />
+            ) : null}
+            <div className="min-h-0 flex-1 overflow-auto">{children}</div>
+          </div>
+        </Providers>
       </body>
     </html>
   );

@@ -1,24 +1,21 @@
-import { headers } from "next/headers";
 import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth/server";
+import { getRequestSession } from "@/lib/auth/session";
 
 export default async function AuthLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  });
+  const { user } = await getRequestSession();
 
-  if (session?.user) {
+  if (user) {
     redirect("/dashboard");
   }
 
   return (
-    <div className="flex min-h-svh w-full flex-col items-center justify-center gap-8 p-4">
+    <div className="flex min-h-full w-full flex-col items-center justify-center gap-8 p-4">
       <div className="flex flex-col items-center gap-3 text-center">
         <Image
           alt=""

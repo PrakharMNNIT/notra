@@ -11,6 +11,7 @@ export interface ToolCopy {
 }
 
 export interface ChatToolBlockProps {
+  toolCallId: string;
   toolName: string;
   state: string;
   input?: unknown;

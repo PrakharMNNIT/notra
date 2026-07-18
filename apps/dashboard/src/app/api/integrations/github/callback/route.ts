@@ -1,4 +1,9 @@
-import { upsertGitHubAppInstallation } from "@notra/ai/integrations/github";
+import {
+  GitHubAccountRequiredError,
+  GitHubInstallationAccessDeniedError,
+  GitHubReauthorizationRequiredError,
+  upsertGitHubAppInstallation,
+} from "@notra/ai/integrations/github";
 import { redis } from "@notra/ai/utils/redis";
 import { buildCallbackUrl } from "@notra/utils/callback-url";
 import { ORPCError } from "@orpc/server";
@@ -15,11 +20,14 @@ interface GitHubAppInstallState {
 export async function GET(request: NextRequest) {
   const baseUrl =
     process.env.BETTER_AUTH_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? "";
+  let callbackPath: string | null = null;
+  let installationId: string | null = null;
+  let state: string | null = null;
 
   try {
     const { searchParams } = new URL(request.url);
-    const installationId = searchParams.get("installation_id");
-    const state = searchParams.get("state");
+    installationId = searchParams.get("installation_id");
+    state = searchParams.get("state");
     const error = searchParams.get("error");
 
     if (error) {
@@ -39,6 +47,7 @@ export async function GET(request: NextRequest) {
 
     const installState: GitHubAppInstallState =
       typeof raw === "string" ? JSON.parse(raw) : raw;
+    callbackPath = installState.callbackPath;
 
     const { session } = await getServerSession({ headers: request.headers });
     if (!session?.userId || session.userId !== installState.userId) {
@@ -71,6 +80,27 @@ export async function GET(request: NextRequest) {
       })
     );
   } catch (error) {
+    if (
+      error instanceof GitHubAccountRequiredError ||
+      error instanceof GitHubReauthorizationRequiredError
+    ) {
+      if (callbackPath && installationId && state) {
+        return NextResponse.redirect(
+          buildCallbackUrl(baseUrl, callbackPath, {
+            githubReauthorizeInstallationId: installationId,
+            githubReauthorizeState: state,
+          })
+        );
+      }
+      return NextResponse.redirect(
+        `${baseUrl}/?error=github_reauthorization_required`
+      );
+    }
+    if (error instanceof GitHubInstallationAccessDeniedError) {
+      return NextResponse.redirect(
+        `${baseUrl}/?error=github_installation_forbidden`
+      );
+    }
     console.error("Error in GitHub App callback:", error);
     return NextResponse.redirect(`${baseUrl}/?error=github_callback_failed`);
   }

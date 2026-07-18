@@ -4,6 +4,7 @@ import {
   getGitHubAppInstallationByOrganization,
   getGitHubAppInstallUrl,
   getSelectedGitHubAppRepositoryIds,
+  isGitHubAccountConnectionRequired,
   listGitHubAppRepositories,
   setSelectedGitHubAppRepositories,
 } from "@notra/ai/integrations/github";
@@ -19,13 +20,16 @@ import {
   badRequest,
   internalServerError,
   notFound,
+  tooManyRequests,
 } from "@/lib/orpc/utils/errors";
+import { githubPersonalAccessTokenSchema } from "@/schemas/integrations";
 import type { GitHubAccountType } from "@/types/integrations/github";
+import { ratelimit } from "@/utils/ratelimit";
 
 const probeRepositoryInputSchema = z.object({
   owner: z.string().trim().min(1, "owner is required"),
   repo: z.string().trim().min(1, "repo is required"),
-  token: z.string().trim().optional(),
+  token: githubPersonalAccessTokenSchema.optional(),
 });
 
 const organizationIdInputSchema = z.object({
@@ -123,6 +127,19 @@ const prepareGitHubAppInstall = Effect.fn("prepareGitHubAppInstall")(function* (
     userId: string;
   }
 ) {
+  const requiresAccountConnection = yield* Effect.tryPromise({
+    try: () => isGitHubAccountConnectionRequired(input.userId),
+    catch: (cause) =>
+      new GitHubAppInstallPreparationError({
+        message: "Failed to verify GitHub account authorization",
+        cause,
+      }),
+  });
+
+  if (requiresAccountConnection) {
+    return { requiresAccountConnection: true as const };
+  }
+
   const redisClient = redis;
 
   if (!redisClient) {
@@ -163,7 +180,7 @@ const prepareGitHubAppInstall = Effect.fn("prepareGitHubAppInstall")(function* (
       }),
   });
 
-  return { url };
+  return { requiresAccountConnection: false as const, url };
 });
 
 export const githubRouter = {
@@ -186,6 +203,16 @@ export const githubRouter = {
             repositories: [],
             selectedRepositoryIds: [],
           };
+        }
+
+        const { success: withinLimit } =
+          await ratelimit.githubAppRepositories.limit(
+            `${context.user.id}:${input.organizationId}`
+          );
+        if (!withinLimit) {
+          throw tooManyRequests(
+            "Too many GitHub repository requests. Please try again shortly."
+          );
         }
 
         return Effect.runPromise(
@@ -288,7 +315,16 @@ export const githubRouter = {
   },
   probeRepository: authorizedProcedure
     .input(probeRepositoryInputSchema)
-    .handler(async ({ input }) => {
+    .handler(async ({ context, input }) => {
+      const { success: withinLimit } = await ratelimit.githubProbe.limit(
+        context.user.id
+      );
+      if (!withinLimit) {
+        throw tooManyRequests(
+          "Too many GitHub repository checks. Please try again shortly."
+        );
+      }
+
       const octokit = createOctokit(input.token || undefined);
 
       return Effect.runPromise(

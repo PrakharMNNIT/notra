@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { db } from "@notra/db/drizzle";
 import {
+  accounts,
   githubAppInstallations,
   githubIntegrations,
   repositoryOutputs,
@@ -32,6 +33,7 @@ import { redis } from "../utils/redis";
 import { getConfiguredAppUrl } from "../utils/url";
 
 const nanoid = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 16);
+const GITHUB_SCOPE_SEPARATOR_PATTERN = /[,\s]+/;
 
 export class GitHubBranchNotFoundError extends Error {
   constructor(owner: string, repo: string, branch: string) {
@@ -45,6 +47,48 @@ export class GitHubAppNotConfiguredError extends Error {
     super("GitHub App is not configured");
     this.name = "GitHubAppNotConfiguredError";
   }
+}
+
+export class GitHubAccountRequiredError extends Error {
+  constructor() {
+    super("Connect your GitHub account before installing the GitHub App");
+    this.name = "GitHubAccountRequiredError";
+  }
+}
+
+export class GitHubReauthorizationRequiredError extends Error {
+  constructor() {
+    super("Reconnect GitHub to authorize organization access");
+    this.name = "GitHubReauthorizationRequiredError";
+  }
+}
+
+export class GitHubInstallationAccessDeniedError extends Error {
+  constructor() {
+    super("You must administer the GitHub account that owns this installation");
+    this.name = "GitHubInstallationAccessDeniedError";
+  }
+}
+
+function hasGitHubScope(scope: string | null, requiredScope: string) {
+  return Boolean(
+    scope
+      ?.split(GITHUB_SCOPE_SEPARATOR_PATTERN)
+      .filter(Boolean)
+      .includes(requiredScope)
+  );
+}
+
+function getErrorStatus(error: unknown) {
+  if (
+    typeof error !== "object" ||
+    error === null ||
+    !("status" in error) ||
+    typeof error.status !== "number"
+  ) {
+    return null;
+  }
+  return error.status;
 }
 
 function generateWebhookSecret(): string {
@@ -136,6 +180,97 @@ async function getGitHubAppInstallation(installationId: string) {
   );
 
   return Effect.runPromise(decodeGitHubAppInstallationResponse(data));
+}
+
+async function assertGitHubInstallationAdmin(params: {
+  userId: string;
+  installationAccount: {
+    id: number;
+    login: string;
+    type: "User" | "Organization";
+  };
+}) {
+  const githubAccount = await db.query.accounts.findFirst({
+    where: and(
+      eq(accounts.userId, params.userId),
+      eq(accounts.providerId, "github")
+    ),
+    columns: {
+      accountId: true,
+      accessToken: true,
+      scope: true,
+    },
+  });
+
+  if (!githubAccount?.accessToken) {
+    throw new GitHubAccountRequiredError();
+  }
+
+  const octokit = createOctokit(githubAccount.accessToken);
+  const githubUser = await octokit
+    .request("GET /user", {
+      headers: {
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    })
+    .then(({ data }) => data)
+    .catch((error: unknown) => {
+      if (getErrorStatus(error) === 401) {
+        throw new GitHubReauthorizationRequiredError();
+      }
+      throw error;
+    });
+
+  if (String(githubUser.id) !== githubAccount.accountId) {
+    throw new GitHubInstallationAccessDeniedError();
+  }
+
+  if (params.installationAccount.type === "User") {
+    if (githubAccount.accountId !== String(params.installationAccount.id)) {
+      throw new GitHubInstallationAccessDeniedError();
+    }
+    return;
+  }
+
+  if (!hasGitHubScope(githubAccount.scope, "read:org")) {
+    throw new GitHubReauthorizationRequiredError();
+  }
+
+  try {
+    const { data: membership } = await octokit.request(
+      "GET /user/memberships/orgs/{org}",
+      {
+        org: params.installationAccount.login,
+        headers: {
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
+      }
+    );
+
+    if (membership.state !== "active" || membership.role !== "admin") {
+      throw new GitHubInstallationAccessDeniedError();
+    }
+  } catch (error) {
+    const status = getErrorStatus(error);
+    if (error instanceof GitHubInstallationAccessDeniedError) {
+      throw error;
+    }
+    if (status === 401 || status === 403) {
+      throw new GitHubReauthorizationRequiredError();
+    }
+    throw new GitHubInstallationAccessDeniedError();
+  }
+}
+
+export async function isGitHubAccountConnectionRequired(userId: string) {
+  const githubAccount = await db.query.accounts.findFirst({
+    where: and(eq(accounts.userId, userId), eq(accounts.providerId, "github")),
+    columns: {
+      accessToken: true,
+    },
+  });
+
+  return !githubAccount?.accessToken;
 }
 
 async function insertDefaultRepositoryOutputs(repositoryId: string) {
@@ -433,6 +568,11 @@ export async function upsertGitHubAppInstallation(params: {
     throw new Error("GitHub installation account is missing");
   }
 
+  await assertGitHubInstallationAdmin({
+    userId: params.userId,
+    installationAccount: installation.account,
+  });
+
   const values = {
     id: nanoid(),
     organizationId: params.organizationId,
@@ -624,6 +764,26 @@ export async function setSelectedGitHubAppRepositories(params: {
     )
     .map((repo) => repo.id);
 
+  await Promise.all(
+    selectedRepositories.map(async (repository) => {
+      const existingIntegrationId = existingByRepositoryId.get(repository.id);
+      const conflictingRepository = await findRepositoryInOrganization(
+        params.organizationId,
+        repository.owner,
+        repository.name
+      );
+
+      if (
+        conflictingRepository &&
+        conflictingRepository.id !== existingIntegrationId
+      ) {
+        throw new Error(
+          `Repository ${repository.fullName} is already connected`
+        );
+      }
+    })
+  );
+
   if (deselectedIds.length > 0) {
     await db
       .update(githubIntegrations)
@@ -768,7 +928,10 @@ export async function getGitHubIntegrationById(integrationId: string) {
   return toIntegrationWithRepository(integration);
 }
 
-export async function getDecryptedToken(integrationId: string, userId: string) {
+async function getAuthorizedGitHubIntegration(
+  integrationId: string,
+  userId: string
+) {
   const integration = await getGitHubIntegrationById(integrationId);
 
   if (!integration) {
@@ -782,6 +945,37 @@ export async function getDecryptedToken(integrationId: string, userId: string) {
 
   if (!hasAccess) {
     throw new Error("User does not have access to this integration");
+  }
+
+  return integration;
+}
+
+export async function getDecryptedToken(integrationId: string, userId: string) {
+  const integration = await getAuthorizedGitHubIntegration(
+    integrationId,
+    userId
+  );
+
+  if (!integration.encryptedToken) {
+    return null;
+  }
+
+  return decryptToken(integration.encryptedToken);
+}
+
+export async function getGitHubCloneToken(
+  integrationId: string,
+  userId: string
+) {
+  const integration = await getAuthorizedGitHubIntegration(
+    integrationId,
+    userId
+  );
+
+  if (integration.githubAppInstallationId) {
+    return createGitHubAppInstallationTokenForRecord(
+      integration.githubAppInstallationId
+    );
   }
 
   if (!integration.encryptedToken) {
@@ -850,26 +1044,7 @@ export async function getOutputById(outputId: string) {
 export async function configureOutput(params: ConfigureOutputParams) {
   const { repositoryId, outputType, enabled, config } = params;
 
-  const existing = await db.query.repositoryOutputs.findFirst({
-    where: and(
-      eq(repositoryOutputs.repositoryId, repositoryId),
-      eq(repositoryOutputs.outputType, outputType)
-    ),
-  });
-
-  if (existing) {
-    const [updated] = await db
-      .update(repositoryOutputs)
-      .set({
-        enabled,
-        config,
-      })
-      .where(eq(repositoryOutputs.id, existing.id))
-      .returning();
-    return updated;
-  }
-
-  const [created] = await db
+  const [output] = await db
     .insert(repositoryOutputs)
     .values({
       id: nanoid(),
@@ -878,9 +1053,16 @@ export async function configureOutput(params: ConfigureOutputParams) {
       enabled,
       config,
     })
+    .onConflictDoUpdate({
+      target: [repositoryOutputs.repositoryId, repositoryOutputs.outputType],
+      set: {
+        enabled,
+        config,
+      },
+    })
     .returning();
 
-  return created;
+  return output;
 }
 
 export async function toggleGitHubIntegration(

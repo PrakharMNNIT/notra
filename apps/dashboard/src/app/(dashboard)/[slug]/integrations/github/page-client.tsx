@@ -6,7 +6,7 @@ import { Kbd } from "@notra/ui/components/ui/kbd";
 import { useHotkey } from "@tanstack/react-hotkeys";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useEffectEvent, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/button";
 import { EmptyState } from "@/components/empty-state";
@@ -21,7 +21,10 @@ import {
   GITHUB_INSTALL_CHANNEL,
   GITHUB_INSTALL_MESSAGE,
 } from "@/constants/github";
-import { startGitHubInstall } from "@/lib/integrations/github/install";
+import {
+  reauthorizeGitHub,
+  startGitHubInstall,
+} from "@/lib/integrations/github/install";
 import { dashboardOrpc } from "@/lib/orpc/query";
 
 interface PageClientProps {
@@ -53,6 +56,72 @@ function getGitHubInstallStorageKey(organizationId: string) {
   return `${GITHUB_INSTALL_CHANNEL}:${organizationId}`;
 }
 
+function useResumeGitHubInstall(params: {
+  callbackPath: string;
+  organizationId: string;
+  reauthorizationInstallationId: string | null;
+  reauthorizationState: string | null;
+  shouldResume: boolean;
+}) {
+  const resumedInstallRef = useRef(false);
+
+  useEffect(() => {
+    if (
+      (!params.shouldResume &&
+        !(
+          params.reauthorizationInstallationId && params.reauthorizationState
+        )) ||
+      !params.organizationId ||
+      resumedInstallRef.current
+    ) {
+      return;
+    }
+
+    resumedInstallRef.current = true;
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.delete("githubAccountConnected");
+    nextUrl.searchParams.delete("githubReauthorizeInstallationId");
+    nextUrl.searchParams.delete("githubReauthorizeState");
+    window.history.replaceState(null, "", nextUrl);
+
+    if (params.reauthorizationInstallationId && params.reauthorizationState) {
+      const callbackUrl = new URL(
+        "/api/integrations/github/callback",
+        window.location.origin
+      );
+      callbackUrl.searchParams.set(
+        "installation_id",
+        params.reauthorizationInstallationId
+      );
+      callbackUrl.searchParams.set("state", params.reauthorizationState);
+
+      reauthorizeGitHub(`${callbackUrl.pathname}${callbackUrl.search}`).then(
+        (started) => {
+          if (!started) {
+            toast.error("Failed to reconnect GitHub");
+          }
+        }
+      );
+      return;
+    }
+
+    startGitHubInstall({
+      organizationId: params.organizationId,
+      callbackPath: params.callbackPath,
+    }).then((started) => {
+      if (!started) {
+        toast.error("Failed to resume GitHub installation");
+      }
+    });
+  }, [
+    params.callbackPath,
+    params.organizationId,
+    params.reauthorizationInstallationId,
+    params.reauthorizationState,
+    params.shouldResume,
+  ]);
+}
+
 export default function PageClient({ organizationSlug }: PageClientProps) {
   const { getOrganization } = useOrganizationsContext();
   const organization = getOrganization(organizationSlug);
@@ -63,6 +132,15 @@ export default function PageClient({ organizationSlug }: PageClientProps) {
   const [connectOpen, setConnectOpen] = useState(false);
   const [reposOpen, setReposOpen] = useState(false);
   const [legacyOpen, setLegacyOpen] = useState(false);
+  useResumeGitHubInstall({
+    callbackPath: pathname,
+    organizationId,
+    reauthorizationInstallationId: searchParams.get(
+      "githubReauthorizeInstallationId"
+    ),
+    reauthorizationState: searchParams.get("githubReauthorizeState"),
+    shouldResume: searchParams.get("githubAccountConnected") === "true",
+  });
 
   const githubAppQuery = useQuery(
     dashboardOrpc.github.app.get.queryOptions({

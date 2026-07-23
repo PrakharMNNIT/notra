@@ -1,9 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
 import { toast } from "sonner";
-import { GITHUB_INSTALL_MESSAGE } from "@/constants/github";
 import { startGitHubInstall } from "@/lib/integrations/github/install";
 import { dashboardOrpc } from "@/lib/orpc/query";
 import type { GitHubIntegrationDialogProps } from "@/types/integrations/github";
@@ -38,24 +36,6 @@ export function GitHubIntegrationDialog({
       }),
     });
 
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (
-        event.origin === window.location.origin &&
-        event.data === GITHUB_INSTALL_MESSAGE
-      ) {
-        queryClient.invalidateQueries({
-          queryKey: dashboardOrpc.github.app.get.queryKey({
-            input: { organizationId },
-          }),
-        });
-      }
-    };
-
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
-  }, [organizationId, queryClient]);
-
   const saveRepositoriesMutation = useMutation({
     mutationFn: (repositoryIds: string[]) =>
       dashboardOrpc.github.app.saveRepositories.call({
@@ -78,9 +58,9 @@ export function GitHubIntegrationDialog({
     }
 
     const callbackPath = `/${organizationSlug}/integrations/github`;
-    const didStart = await startGitHubInstall({ organizationId, callbackPath });
+    const result = await startGitHubInstall({ organizationId, callbackPath });
 
-    if (!didStart) {
+    if (!result.started) {
       toast.error("Failed to start GitHub install");
     }
   };

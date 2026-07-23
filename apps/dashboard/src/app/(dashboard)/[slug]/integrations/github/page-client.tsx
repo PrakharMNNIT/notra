@@ -6,7 +6,7 @@ import { Kbd } from "@notra/ui/components/ui/kbd";
 import { useHotkey } from "@tanstack/react-hotkeys";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/button";
 import { EmptyState } from "@/components/empty-state";
@@ -18,10 +18,8 @@ import { LegacyAddIntegrationDialog } from "@/components/integrations/legacy/add
 import { PageContainer } from "@/components/layout/container";
 import { useOrganizationsContext } from "@/components/providers/organization-provider";
 import {
-  GITHUB_INSTALL_CHANNEL,
-  GITHUB_INSTALL_MESSAGE,
-} from "@/constants/github";
-import {
+  hasAttemptedGitHubReauthorization,
+  markGitHubReauthorizationAttempted,
   reauthorizeGitHub,
   startGitHubInstall,
 } from "@/lib/integrations/github/install";
@@ -34,31 +32,6 @@ import {
 
 interface PageClientProps {
   organizationSlug: string;
-}
-
-interface GitHubInstallMessage {
-  type: typeof GITHUB_INSTALL_MESSAGE;
-  organizationId: string;
-}
-
-function isGitHubInstallMessage(
-  value: unknown,
-  organizationId: string
-): value is GitHubInstallMessage {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-
-  return (
-    "type" in value &&
-    value.type === GITHUB_INSTALL_MESSAGE &&
-    "organizationId" in value &&
-    value.organizationId === organizationId
-  );
-}
-
-function getGitHubInstallStorageKey(organizationId: string) {
-  return `${GITHUB_INSTALL_CHANNEL}:${organizationId}`;
 }
 
 function useResumeGitHubInstall(params: {
@@ -90,6 +63,12 @@ function useResumeGitHubInstall(params: {
     window.history.replaceState(null, "", nextUrl);
 
     if (params.reauthorizationInstallationId && params.reauthorizationState) {
+      if (hasAttemptedGitHubReauthorization(params.reauthorizationState)) {
+        toast.error("Failed to reconnect GitHub. Please try again.");
+        return;
+      }
+      markGitHubReauthorizationAttempted(params.reauthorizationState);
+
       const callbackUrl = new URL(
         "/api/integrations/github/callback",
         window.location.origin
@@ -113,10 +92,16 @@ function useResumeGitHubInstall(params: {
     startGitHubInstall({
       organizationId: params.organizationId,
       callbackPath: params.callbackPath,
-    }).then((started) => {
-      if (!started) {
-        toast.error("Failed to resume GitHub installation");
+      allowAccountConnection: false,
+    }).then((result) => {
+      if (result.started) {
+        return;
       }
+      toast.error(
+        result.reason === "account-connection-incomplete"
+          ? "GitHub account connection didn't complete. Please try connecting again."
+          : "Failed to resume GitHub installation"
+      );
     });
   }, [
     params.callbackPath,
@@ -182,7 +167,9 @@ export default function PageClient({ organizationSlug }: PageClientProps) {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const [connectOpen, setConnectOpen] = useState(false);
-  const [reposOpen, setReposOpen] = useState(false);
+  const [reposOpen, setReposOpen] = useState(
+    () => searchParams.get("githubConnected") === "true"
+  );
   const [legacyOpen, setLegacyOpen] = useState(false);
   useResumeGitHubInstall({
     callbackPath: pathname,
@@ -225,72 +212,21 @@ export default function PageClient({ organizationSlug }: PageClientProps) {
   const selectedRepositoryIds = data?.selectedRepositoryIds ?? [];
   const repositories = data?.repositories ? [...data.repositories] : [];
 
-  const handleGitHubInstalled = useEffectEvent(() => {
-    queryClient.invalidateQueries({
-      queryKey: dashboardOrpc.github.app.get.queryKey({
-        input: { organizationId },
-      }),
-    });
-    setConnectOpen(false);
-    setReposOpen(true);
-  });
-
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (
-        event.origin === window.location.origin &&
-        isGitHubInstallMessage(event.data, organization?.id ?? "")
-      ) {
-        handleGitHubInstalled();
-      }
-    };
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key === getGitHubInstallStorageKey(organization?.id ?? "")) {
-        handleGitHubInstalled();
-      }
-    };
-    const channel = new BroadcastChannel(GITHUB_INSTALL_CHANNEL);
-    const handleChannelMessage = (event: MessageEvent) => {
-      if (isGitHubInstallMessage(event.data, organization?.id ?? "")) {
-        handleGitHubInstalled();
-      }
-    };
-    channel.addEventListener("message", handleChannelMessage);
-
-    window.addEventListener("message", handleMessage);
-    window.addEventListener("storage", handleStorage);
-    return () => {
-      channel.removeEventListener("message", handleChannelMessage);
-      channel.close();
-      window.removeEventListener("message", handleMessage);
-      window.removeEventListener("storage", handleStorage);
-    };
-  }, [organization?.id]);
-
   useEffect(() => {
     if (searchParams.get("githubConnected") !== "true" || !organization?.id) {
       return;
     }
 
-    const message: GitHubInstallMessage = {
-      type: GITHUB_INSTALL_MESSAGE,
-      organizationId: organization.id,
-    };
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.delete("githubConnected");
+    window.history.replaceState(null, "", nextUrl);
 
-    if (window.opener && window.opener !== window) {
-      window.opener.postMessage(message, window.location.origin);
-      window.close();
-      return;
-    }
-
-    const channel = new BroadcastChannel(GITHUB_INSTALL_CHANNEL);
-    channel.postMessage(message);
-    channel.close();
-    window.localStorage.setItem(
-      getGitHubInstallStorageKey(organization.id),
-      crypto.randomUUID()
-    );
-  }, [searchParams, organization?.id]);
+    queryClient.invalidateQueries({
+      queryKey: dashboardOrpc.github.app.get.queryKey({
+        input: { organizationId: organization.id },
+      }),
+    });
+  }, [searchParams, organization?.id, queryClient]);
 
   const saveRepositoriesMutation = useMutation({
     mutationFn: async (repositoryIds: string[]) => {
@@ -330,24 +266,24 @@ export default function PageClient({ organizationSlug }: PageClientProps) {
     },
   });
 
-  const openInstallTab = async () => {
+  const startInstall = async () => {
     if (!organizationId) {
       return;
     }
 
     const callbackPath = pathname || `/${organizationSlug}/integrations/github`;
-    const didStart = await startGitHubInstall({ organizationId, callbackPath });
+    const result = await startGitHubInstall({ organizationId, callbackPath });
 
-    if (!didStart) {
+    if (!result.started) {
       toast.error("Failed to start GitHub install");
     }
   };
 
   const handleOpenConnect = () => setConnectOpen(true);
 
-  const handleConnect = openInstallTab;
+  const handleConnect = startInstall;
 
-  const handleAddAccount = openInstallTab;
+  const handleAddAccount = startInstall;
 
   useHotkey(
     "C",

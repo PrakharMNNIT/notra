@@ -63,20 +63,18 @@ import {
 } from "@/components/chat/chat-input";
 import { ChatQueue, type QueuedMessage } from "@/components/chat/chat-queue";
 import { ChatSuggestions } from "@/components/chat/chat-suggestions";
-import {
-  getReferenceDisplay,
-  parseReferenceValue,
-  renderTextWithIntegrationReferences,
-} from "@/components/chat/integration-reference";
+import { renderTextWithIntegrationReferences } from "@/components/chat/integration-reference";
 import {
   UserMessageActions,
   UserMessageEditor,
 } from "@/components/chat/user-message-actions";
 import { useOrganizationsContext } from "@/components/providers/organization-provider";
 import { TOOL_TIMER_THRESHOLD_SECONDS } from "@/constants/chat-tool-timer";
+import { INTEGRATION_REFERENCE_TOKEN_SPLIT_REGEX } from "@/constants/integration-reference";
 import { localStorageKeys } from "@/constants/storage";
 import { authClient } from "@/lib/auth/client";
 import { useElapsedSeconds } from "@/lib/hooks/use-elapsed-seconds";
+import { getMcpIconUrls } from "@/lib/integrations/mcp";
 import { dashboardOrpc } from "@/lib/orpc/query";
 import { isImageMimeType } from "@/lib/upload/mime";
 import { cn } from "@/lib/utils";
@@ -96,6 +94,10 @@ import {
 import { updateWasStoppedByUser } from "@/utils/chat-state";
 import { formatLongDate, getGreeting } from "@/utils/dashboard-greeting";
 import { formatElapsedSeconds } from "@/utils/format-elapsed-seconds";
+import {
+  getReferenceDisplay,
+  parseReferenceValue,
+} from "@/utils/integration-reference";
 import { getOutputTypeLabel } from "@/utils/output-types";
 
 const BlogChangelogPreview = dynamic(
@@ -327,6 +329,12 @@ function StandaloneChatPageClient({
   const organizationId = organization?.id ?? "";
   const { data: session } = authClient.useSession();
   const queryClient = useQueryClient();
+  const { data: customMcpData } = useQuery(
+    dashboardOrpc.integrations.mcp.list.queryOptions({
+      input: { organizationId },
+      enabled: Boolean(organizationId),
+    })
+  );
   const { data: mcpStoreData } = useQuery(
     dashboardOrpc.integrations.mcp.storeList.queryOptions({
       input: { organizationId },
@@ -335,22 +343,32 @@ function StandaloneChatPageClient({
   );
   const mcpLogosByConnectionId = useMemo(
     () =>
-      new Map(
-        (mcpStoreData?.integrations ?? []).flatMap((integration) =>
+      new Map([
+        ...(customMcpData?.servers ?? []).map(
+          (server) =>
+            [
+              server.id,
+              getMcpIconUrls({
+                darkUrl: server.logoDarkUrl,
+                lightUrl: server.logoLightUrl,
+              }),
+            ] as const
+        ),
+        ...(mcpStoreData?.integrations ?? []).flatMap((integration) =>
           integration.connection
             ? [
                 [
                   integration.connection.id,
-                  {
+                  getMcpIconUrls({
                     darkUrl: integration.logoDarkUrl,
                     lightUrl: integration.logoLightUrl,
-                  },
+                  }),
                 ] as const,
               ]
             : []
-        )
-      ),
-    [mcpStoreData?.integrations]
+        ),
+      ]),
+    [customMcpData?.servers, mcpStoreData?.integrations]
   );
   const [pendingMessageId, setPendingMessageId] = useState<string | null>(null);
   const isHydrated = useSyncExternalStore(
@@ -927,7 +945,7 @@ function StandaloneChatPageClient({
 
   const toDisplayText = useCallback((serialized: string) => {
     return serialized.replace(
-      /@?integration\/(?:github\/[^/\s]+\/[^/\s]+\/[^/\s]+|linear\/[^/\s]+)/g,
+      INTEGRATION_REFERENCE_TOKEN_SPLIT_REGEX,
       (match) => {
         const item = parseReferenceValue(match);
         return item ? getReferenceDisplay(item) : match;
@@ -1433,7 +1451,8 @@ function StandaloneChatPageClient({
 
       const hasInlineReference =
         text.includes("integration/github/") ||
-        text.includes("integration/linear/");
+        text.includes("integration/linear/") ||
+        text.includes("integration/mcp/");
 
       if (hasInlineReference) {
         return (
@@ -1441,7 +1460,7 @@ function StandaloneChatPageClient({
             className="wrap-break-word size-full whitespace-pre-wrap"
             key={`${messageId}-text-${index}`}
           >
-            {renderTextWithIntegrationReferences(text)}
+            {renderTextWithIntegrationReferences(text, mcpLogosByConnectionId)}
           </div>
         );
       }

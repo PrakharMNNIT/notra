@@ -89,6 +89,18 @@ export const ratelimit = {
     prefix: "ratelimit:chat-stop",
     limiter: Ratelimit.slidingWindow(30, "1m"),
   }),
+  chatRelay: new Ratelimit({
+    redis,
+    analytics: true,
+    prefix: "ratelimit:chat-relay",
+    limiter: Ratelimit.slidingWindow(20, "1m"),
+  }),
+  slackOAuth: new Ratelimit({
+    redis,
+    analytics: true,
+    prefix: "ratelimit:slack-oauth",
+    limiter: Ratelimit.slidingWindow(10, "10m"),
+  }),
 };
 
 export function getClientIp(request: NextRequest): string {

@@ -40,13 +40,15 @@ import {
   isToolUIPart,
   type ToolUIPart,
 } from "ai";
-import { LazyMotion, m } from "motion/react";
+import { LazyMotion, m, useReducedMotion } from "motion/react";
 import { nanoid } from "nanoid";
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { parseAsString, useQueryState } from "nuqs";
 import {
+  Children,
+  type ReactElement,
   type ReactNode,
   useCallback,
   useEffect,
@@ -75,6 +77,7 @@ import {
   UserMessageEditor,
 } from "@/components/chat/user-message-actions";
 import { useOrganizationsContext } from "@/components/providers/organization-provider";
+import { MAX_VISIBLE_CHAT_IMAGES } from "@/constants/chat-images";
 import { TOOL_TIMER_THRESHOLD_SECONDS } from "@/constants/chat-tool-timer";
 import { INTEGRATION_REFERENCE_TOKEN_SPLIT_REGEX } from "@/constants/integration-reference";
 import { MIRROR_WORKING_TIMEOUT_MS } from "@/constants/slack-mirror";
@@ -94,6 +97,7 @@ import { cn } from "@/lib/utils";
 import type {
   CreateToolContentType,
   StandaloneChatPageClientProps,
+  UserImageGridProps,
 } from "@/types/components/chat-page";
 import type { PublishedSocialPost } from "@/types/content/post-social";
 import { handleStandaloneChatError } from "@/utils/chat-error";
@@ -303,6 +307,7 @@ function ChatImageAttachment({
   onClick,
 }: ChatImageAttachmentProps) {
   const [hasError, setHasError] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
 
   if (hasError) {
     return (
@@ -316,21 +321,113 @@ function ChatImageAttachment({
 
   return (
     <button
-      className="my-1 block w-fit overflow-hidden rounded-lg border border-border transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="my-1 block w-fit overflow-hidden rounded-lg border border-border bg-muted/40 transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
       onClick={onClick}
       type="button"
     >
       <Image
         alt={filename ?? "attachment"}
-        className="block h-auto max-h-72 w-auto max-w-full"
+        className={cn(
+          "block h-auto max-h-72 w-auto max-w-full transition-opacity duration-300 motion-reduce:transition-none",
+          hasLoaded ? "opacity-100" : "opacity-0"
+        )}
         height={480}
         loading="eager"
         onError={() => setHasError(true)}
+        onLoad={() => setHasLoaded(true)}
         src={url}
         unoptimized
         width={640}
       />
     </button>
+  );
+}
+
+function UserImageGrid({ children }: UserImageGridProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const reduceMotion = useReducedMotion();
+  const imageItems = Children.toArray(children) as ReactElement[];
+  const hiddenImageCount = Math.max(
+    imageItems.length - MAX_VISIBLE_CHAT_IMAGES,
+    0
+  );
+  const visibleImageCount = isExpanded
+    ? imageItems.length
+    : imageItems.length - hiddenImageCount;
+
+  useEffect(() => {
+    if (!isExpanded) {
+      return;
+    }
+
+    const animationFrame = requestAnimationFrame(() => {
+      gridRef.current
+        ?.querySelector<HTMLButtonElement>(
+          `[data-image-index="${MAX_VISIBLE_CHAT_IMAGES}"] button`
+        )
+        ?.focus();
+    });
+
+    return () => cancelAnimationFrame(animationFrame);
+  }, [isExpanded]);
+
+  return (
+    <m.div
+      className="relative flex w-[28rem] max-w-full flex-wrap justify-end gap-1.5"
+      layout={!reduceMotion}
+      ref={gridRef}
+      transition={
+        reduceMotion
+          ? { duration: 0 }
+          : { duration: 0.3, ease: [0.22, 1, 0.36, 1] }
+      }
+    >
+      {imageItems.slice(0, visibleImageCount).map((imageItem, index) => {
+        const isCovered =
+          !isExpanded &&
+          hiddenImageCount > 0 &&
+          index === MAX_VISIBLE_CHAT_IMAGES - 1;
+
+        return (
+          <m.div
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="aspect-square w-[calc((100%_-_0.75rem)/3)] [&>*]:m-0 [&>*]:size-full [&_img]:size-full [&_img]:object-cover"
+            data-image-index={index}
+            inert={isCovered ? true : undefined}
+            initial={
+              reduceMotion || index < MAX_VISIBLE_CHAT_IMAGES
+                ? false
+                : { opacity: 0, scale: 0.96, y: 8 }
+            }
+            key={imageItem.key}
+            layout={!reduceMotion}
+            transition={
+              reduceMotion
+                ? { duration: 0 }
+                : { duration: 0.3, ease: [0.22, 1, 0.36, 1] }
+            }
+          >
+            {imageItem}
+          </m.div>
+        );
+      })}
+      {!isExpanded && hiddenImageCount > 0 && (
+        <m.button
+          animate={{ opacity: 1 }}
+          aria-label={`Show ${hiddenImageCount} more ${hiddenImageCount === 1 ? "image" : "images"}`}
+          className="absolute right-0 bottom-0 z-10 flex aspect-square w-[calc((100%_-_0.75rem)/3)] items-center justify-center rounded-lg border border-white/15 bg-black/60 font-medium text-white text-xl backdrop-blur-sm transition-colors hover:bg-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset motion-reduce:transition-none"
+          initial={reduceMotion ? false : { opacity: 0 }}
+          onClick={() => setIsExpanded(true)}
+          transition={
+            reduceMotion ? { duration: 0 } : { delay: 0.1, duration: 0.2 }
+          }
+          type="button"
+        >
+          +{hiddenImageCount}
+        </m.button>
+      )}
+    </m.div>
   );
 }
 
@@ -2161,6 +2258,25 @@ function StandaloneChatPageClient({
                         const isUser = message.role === "user";
                         const isEditing =
                           isUser && editingMessageId === message.id;
+                        const userContentParts = isUser
+                          ? message.parts.filter((part) => part.type !== "file")
+                          : message.parts;
+                        const userImageParts = isUser
+                          ? message.parts.filter(
+                              (part) =>
+                                part.type === "file" &&
+                                typeof part.mediaType === "string" &&
+                                isImageMimeType(part.mediaType)
+                            )
+                          : [];
+                        const userFileParts = isUser
+                          ? message.parts.filter(
+                              (part) =>
+                                part.type === "file" &&
+                                (typeof part.mediaType !== "string" ||
+                                  !isImageMimeType(part.mediaType))
+                            )
+                          : [];
                         const branches = isUser
                           ? messageBranches[message.id]
                           : undefined;
@@ -2191,7 +2307,7 @@ function StandaloneChatPageClient({
                                     "ml-auto overflow-hidden",
                                     isEditing
                                       ? "w-full"
-                                      : "flex w-fit max-w-full"
+                                      : "flex w-fit max-w-full flex-col items-end gap-2"
                                   )}
                                   layout
                                   transition={{
@@ -2210,11 +2326,35 @@ function StandaloneChatPageClient({
                                       }
                                     />
                                   ) : (
-                                    <MessageContent>
-                                      {message.parts.map((part, index) =>
-                                        renderPart(part, message.id, index)
+                                    <>
+                                      {userImageParts.length > 0 && (
+                                        <UserImageGrid>
+                                          {userImageParts.map((part, index) =>
+                                            renderPart(part, message.id, index)
+                                          )}
+                                        </UserImageGrid>
                                       )}
-                                    </MessageContent>
+                                      {(userContentParts.length > 0 ||
+                                        userFileParts.length > 0) && (
+                                        <MessageContent>
+                                          {userContentParts.map((part, index) =>
+                                            renderPart(part, message.id, index)
+                                          )}
+                                          {userFileParts.length > 0 && (
+                                            <div className="flex max-w-full flex-wrap justify-end gap-2">
+                                              {userFileParts.map(
+                                                (part, index) =>
+                                                  renderPart(
+                                                    part,
+                                                    message.id,
+                                                    index
+                                                  )
+                                              )}
+                                            </div>
+                                          )}
+                                        </MessageContent>
+                                      )}
+                                    </>
                                   )}
                                 </m.div>
                               ) : (

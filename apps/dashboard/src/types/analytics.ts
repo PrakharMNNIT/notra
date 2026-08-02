@@ -49,6 +49,19 @@ export interface TwitterBatchUsersResponse {
   data?: TwitterBatchUser[];
 }
 
+export interface TwitterUserByUsernameResponse {
+  data?: TwitterBatchUser;
+}
+
+export interface ResolvedTwitterAccount {
+  providerAccountId: string;
+  username: string;
+  displayName: string | null;
+  profileImageUrl: string | null;
+  verified: boolean;
+  verifiedType: string | null;
+}
+
 export interface TwitterTimelineTweet {
   id: string;
   text: string;
@@ -190,6 +203,56 @@ export interface NotraAdoptionResponse {
   organizationCreatedAt: string | null;
   firstNotraPostAt: string | null;
   notraPosts: number;
+}
+
+export type LeaderboardWindow = 7 | 30;
+
+export interface LeaderboardAccount {
+  provider: string;
+  providerAccountId: string;
+  username: string;
+  displayName: string | null;
+  profileImageUrl: string | null;
+  verified: boolean;
+  verifiedType: string | null;
+  isConnected: boolean;
+  trackedAccountId: string | null;
+}
+
+export interface LeaderboardWindowTotals {
+  provider: string;
+  providerAccountId: string;
+  posts: number;
+  interactions: number;
+  impressions: number;
+  previousPosts: number;
+  previousInteractions: number;
+  previousImpressions: number;
+}
+
+export interface LeaderboardEntry {
+  key: string;
+  provider: string;
+  providerAccountId: string;
+  username: string;
+  displayName: string | null;
+  profileImageUrl: string | null;
+  verified: boolean;
+  verifiedType: string | null;
+  isConnected: boolean;
+  trackedAccountId: string | null;
+  rank: number;
+  previousRank: number | null;
+  rankChange: number | null;
+  interactions: number;
+  impressions: number | null;
+  posts: number;
+}
+
+export interface LeaderboardResponse {
+  configured: boolean;
+  days: LeaderboardWindow;
+  entries: LeaderboardEntry[];
 }
 
 export interface TimelineMarker {

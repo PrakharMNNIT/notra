@@ -1,5 +1,10 @@
 import {
+  ingestSocialAccountStats,
+  ingestSocialAccounts,
+  ingestSocialPostStats,
+  ingestSocialPosts,
   isTinybirdConfigured,
+  queryAccountLeaderboard,
   queryEngagementTimeseries,
   queryFollowerGrowth,
   queryNotraAdoption,
@@ -12,30 +17,53 @@ import {
   connectedSocialAccounts,
   organizations,
   posts,
+  trackedSocialAccounts,
 } from "@notra/db/schema";
 import { and, asc, eq } from "drizzle-orm";
+import { buildLeaderboardEntries } from "@/lib/analytics/leaderboard";
+import { buildAccountRow } from "@/lib/analytics/rows";
+import { resolveTwitterAccount } from "@/lib/analytics/tracked-accounts";
+import { collectTwitterRows } from "@/lib/analytics/twitter-sync";
 import { assertOrganizationAccess } from "@/lib/auth/organization";
 import { authorizedProcedure } from "@/lib/orpc/base";
 import {
   analyticsOrganizationInputSchema,
   analyticsTimeseriesInputSchema,
   analyticsTopPostsInputSchema,
+  leaderboardInputSchema,
+  trackAccountInputSchema,
+  untrackAccountInputSchema,
 } from "@/schemas/analytics";
 import type {
   EngagementTimeseriesResponse,
   FollowerGrowthResponse,
+  LeaderboardAccount,
+  LeaderboardResponse,
   NotraAdoptionResponse,
   PostingPerformanceResponse,
   SocialOverviewAccount,
   SocialOverviewResponse,
+  SyncableSocialAccount,
   TopPostsResponse,
 } from "@/types/analytics";
+import { badRequest, notFound } from "../utils/errors";
 
 function toNullableNumber(value: number | bigint | null): number | null {
   if (value === null) {
     return null;
   }
   return Number(value);
+}
+
+async function syncTrackedAccountNow(
+  account: SyncableSocialAccount
+): Promise<void> {
+  const capturedAt = new Date();
+  await ingestSocialAccounts([buildAccountRow(account, capturedAt)]);
+  const rows = await collectTwitterRows([account], capturedAt);
+  await ingestSocialAccountStats(rows.accountStats);
+  await ingestSocialPosts(rows.posts);
+  await ingestSocialPostStats(rows.postStats);
 }
 
 export const analyticsRouter = {
@@ -278,6 +306,218 @@ export const analyticsRouter = {
         };
       }
     ),
+  leaderboard: authorizedProcedure
+    .input(leaderboardInputSchema)
+    .handler(async ({ context, input }): Promise<LeaderboardResponse> => {
+      await assertOrganizationAccess({
+        headers: context.headers,
+        organizationId: input.organizationId,
+        user: context.user,
+      });
+
+      const [connected, tracked, result] = await Promise.all([
+        db.query.connectedSocialAccounts.findMany({
+          columns: {
+            provider: true,
+            providerAccountId: true,
+            username: true,
+            displayName: true,
+            profileImageUrl: true,
+            verified: true,
+            verifiedType: true,
+          },
+          where: eq(
+            connectedSocialAccounts.organizationId,
+            input.organizationId
+          ),
+        }),
+        db.query.trackedSocialAccounts.findMany({
+          columns: {
+            id: true,
+            provider: true,
+            providerAccountId: true,
+            username: true,
+            displayName: true,
+            profileImageUrl: true,
+            verified: true,
+            verifiedType: true,
+          },
+          where: eq(trackedSocialAccounts.organizationId, input.organizationId),
+        }),
+        queryAccountLeaderboard({
+          organization_id: input.organizationId,
+          days: input.days,
+        }).catch((error) => {
+          console.error("[Analytics] leaderboard query failed:", error);
+          return null;
+        }),
+      ]);
+
+      const connectedKeys = new Set(
+        connected.flatMap((account) => [
+          `${account.provider}:${account.providerAccountId}`,
+          `${account.provider}:@${account.username.toLowerCase()}`,
+        ])
+      );
+
+      const accounts: LeaderboardAccount[] = [
+        ...connected.map((account) => ({
+          provider: account.provider,
+          providerAccountId: account.providerAccountId,
+          username: account.username,
+          displayName: account.displayName,
+          profileImageUrl: account.profileImageUrl,
+          verified: account.verified ?? false,
+          verifiedType: account.verifiedType,
+          isConnected: true,
+          trackedAccountId: null,
+        })),
+        ...tracked
+          .filter(
+            (account) =>
+              !(
+                connectedKeys.has(
+                  `${account.provider}:${account.providerAccountId}`
+                ) ||
+                connectedKeys.has(
+                  `${account.provider}:@${account.username.toLowerCase()}`
+                )
+              )
+          )
+          .map((account) => ({
+            provider: account.provider,
+            providerAccountId: account.providerAccountId,
+            username: account.username,
+            displayName: account.displayName,
+            profileImageUrl: account.profileImageUrl,
+            verified: account.verified,
+            verifiedType: account.verifiedType,
+            isConnected: false,
+            trackedAccountId: account.id,
+          })),
+      ];
+
+      const totals = (result?.data ?? []).map((row) => ({
+        provider: row.provider,
+        providerAccountId: row.provider_account_id,
+        posts: Number(row.posts),
+        interactions: Number(row.interactions),
+        impressions: Number(row.impressions),
+        previousPosts: Number(row.prev_posts),
+        previousInteractions: Number(row.prev_interactions),
+        previousImpressions: Number(row.prev_impressions),
+      }));
+
+      return {
+        configured: isTinybirdConfigured(),
+        days: input.days,
+        entries: buildLeaderboardEntries(accounts, totals),
+      };
+    }),
+  trackAccount: authorizedProcedure
+    .input(trackAccountInputSchema)
+    .handler(async ({ context, input }) => {
+      await assertOrganizationAccess({
+        headers: context.headers,
+        organizationId: input.organizationId,
+        user: context.user,
+      });
+
+      const resolved = await resolveTwitterAccount(input.username);
+      if (!resolved) {
+        throw badRequest(`Could not find the X account @${input.username}`);
+      }
+
+      const connectedTwitterAccounts =
+        await db.query.connectedSocialAccounts.findMany({
+          columns: { providerAccountId: true, username: true },
+          where: and(
+            eq(connectedSocialAccounts.organizationId, input.organizationId),
+            eq(connectedSocialAccounts.provider, "twitter")
+          ),
+        });
+      const existingConnected = connectedTwitterAccounts.some(
+        (account) =>
+          account.providerAccountId === resolved.providerAccountId ||
+          account.username.toLowerCase() === resolved.username.toLowerCase()
+      );
+      if (existingConnected) {
+        return { trackedAccountId: null, username: resolved.username };
+      }
+
+      const existingTracked = await db.query.trackedSocialAccounts.findFirst({
+        columns: { id: true },
+        where: and(
+          eq(trackedSocialAccounts.organizationId, input.organizationId),
+          eq(trackedSocialAccounts.provider, "twitter"),
+          eq(
+            trackedSocialAccounts.providerAccountId,
+            resolved.providerAccountId
+          )
+        ),
+      });
+      if (existingTracked) {
+        return {
+          trackedAccountId: existingTracked.id,
+          username: resolved.username,
+        };
+      }
+
+      const trackedAccountId = crypto.randomUUID();
+      await db.insert(trackedSocialAccounts).values({
+        id: trackedAccountId,
+        organizationId: input.organizationId,
+        provider: "twitter",
+        providerAccountId: resolved.providerAccountId,
+        username: resolved.username,
+        displayName: resolved.displayName,
+        profileImageUrl: resolved.profileImageUrl,
+        verified: resolved.verified,
+        verifiedType: resolved.verifiedType,
+      });
+
+      try {
+        await syncTrackedAccountNow({
+          id: trackedAccountId,
+          organizationId: input.organizationId,
+          provider: "twitter",
+          providerAccountId: resolved.providerAccountId,
+          username: resolved.username,
+          displayName: resolved.displayName,
+          profileImageUrl: resolved.profileImageUrl,
+          verified: false,
+        });
+      } catch (error) {
+        console.error("[Analytics] tracked account sync failed:", error);
+      }
+
+      return { trackedAccountId, username: resolved.username };
+    }),
+  untrackAccount: authorizedProcedure
+    .input(untrackAccountInputSchema)
+    .handler(async ({ context, input }) => {
+      await assertOrganizationAccess({
+        headers: context.headers,
+        organizationId: input.organizationId,
+        user: context.user,
+      });
+
+      const deleted = await db
+        .delete(trackedSocialAccounts)
+        .where(
+          and(
+            eq(trackedSocialAccounts.id, input.trackedAccountId),
+            eq(trackedSocialAccounts.organizationId, input.organizationId)
+          )
+        )
+        .returning({ id: trackedSocialAccounts.id });
+
+      if (deleted.length === 0) {
+        throw notFound("Tracked account not found");
+      }
+
+      return { trackedAccountId: input.trackedAccountId };
+    }),
   followerGrowth: authorizedProcedure
     .input(analyticsTimeseriesInputSchema)
     .handler(async ({ context, input }): Promise<FollowerGrowthResponse> => {

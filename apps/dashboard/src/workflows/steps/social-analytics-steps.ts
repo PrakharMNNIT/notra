@@ -6,7 +6,10 @@ import {
   isTinybirdConfigured,
 } from "@notra/analytics/tinybird/client";
 import { db } from "@notra/db/drizzle";
-import { connectedSocialAccounts } from "@notra/db/schema";
+import {
+  connectedSocialAccounts,
+  trackedSocialAccounts,
+} from "@notra/db/schema";
 import { eq } from "drizzle-orm";
 import { buildAccountRow } from "@/lib/analytics/rows";
 import { collectTwitterRows } from "@/lib/analytics/twitter-sync";
@@ -35,7 +38,22 @@ export async function listSyncableAccounts(
       : {}),
   });
 
-  return accounts.map((account) => ({
+  const tracked = await db.query.trackedSocialAccounts.findMany({
+    columns: {
+      id: true,
+      organizationId: true,
+      provider: true,
+      providerAccountId: true,
+      username: true,
+      displayName: true,
+      profileImageUrl: true,
+    },
+    ...(organizationId
+      ? { where: eq(trackedSocialAccounts.organizationId, organizationId) }
+      : {}),
+  });
+
+  const connected: SyncableSocialAccount[] = accounts.map((account) => ({
     id: account.id,
     organizationId: account.organizationId,
     provider: account.provider,
@@ -45,6 +63,38 @@ export async function listSyncableAccounts(
     profileImageUrl: account.profileImageUrl,
     verified: account.verified ?? false,
   }));
+
+  const connectedKeys = new Set(
+    connected.flatMap((account) => [
+      `${account.organizationId}:${account.provider}:${account.providerAccountId}`,
+      `${account.organizationId}:${account.provider}:@${account.username.toLowerCase()}`,
+    ])
+  );
+
+  const trackedOnly: SyncableSocialAccount[] = tracked
+    .filter(
+      (account) =>
+        !(
+          connectedKeys.has(
+            `${account.organizationId}:${account.provider}:${account.providerAccountId}`
+          ) ||
+          connectedKeys.has(
+            `${account.organizationId}:${account.provider}:@${account.username.toLowerCase()}`
+          )
+        )
+    )
+    .map((account) => ({
+      id: account.id,
+      organizationId: account.organizationId,
+      provider: account.provider,
+      providerAccountId: account.providerAccountId,
+      username: account.username,
+      displayName: account.displayName,
+      profileImageUrl: account.profileImageUrl,
+      verified: false,
+    }));
+
+  return [...connected, ...trackedOnly];
 }
 
 export async function snapshotAccountDimensions(

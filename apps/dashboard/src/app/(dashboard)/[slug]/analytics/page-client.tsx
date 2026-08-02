@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { AccountFilter } from "@/components/analytics/account-filter";
 import { AccountSeriesChartCard } from "@/components/analytics/account-series-chart-card";
 import { FollowersCard } from "@/components/analytics/followers-card";
+import { LeaderboardCard } from "@/components/analytics/leaderboard-card";
 import { PostingPerformanceCard } from "@/components/analytics/posting-performance-card";
 import { SummaryStats } from "@/components/analytics/summary-stats";
 import { TopPostsCard } from "@/components/analytics/top-posts-card";
@@ -223,6 +224,17 @@ export default function PageClient({ organizationSlug }: PageClientProps) {
         )}
 
         <SummaryStats accounts={accounts} points={engagement?.points ?? []} />
+
+        <section className="space-y-3">
+          <SectionHeader
+            description="Every account you post from or track, ranked by interactions"
+            title="Accounts"
+          />
+          <LeaderboardCard
+            accountDetails={accounts}
+            organizationId={organizationId}
+          />
+        </section>
 
         <section className="space-y-3">
           <SectionHeader

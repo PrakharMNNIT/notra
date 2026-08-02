@@ -12,6 +12,9 @@ import {
   socialPosts,
 } from "./datasources";
 import {
+  type AccountLeaderboardParams,
+  type AccountLeaderboardRow,
+  accountLeaderboard,
   type EngagementTimeseriesParams,
   type EngagementTimeseriesRow,
   engagementTimeseries,
@@ -54,6 +57,7 @@ function createTinybirdClient() {
       followerGrowth,
       postingPerformance,
       notraAdoption,
+      accountLeaderboard,
     },
   });
 }
@@ -182,4 +186,14 @@ export async function queryNotraAdoption(params: {
     return null;
   }
   return await client.notraAdoption.query(params);
+}
+
+export async function queryAccountLeaderboard(
+  params: AccountLeaderboardParams
+): Promise<QueryResult<AccountLeaderboardRow> | null> {
+  const client = getTinybirdClient();
+  if (!client) {
+    return null;
+  }
+  return await client.accountLeaderboard.query(params);
 }

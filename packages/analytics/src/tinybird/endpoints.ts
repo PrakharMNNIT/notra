@@ -188,6 +188,92 @@ export const engagementTimeseries = defineEndpoint("engagement_timeseries", {
   },
 });
 
+export const accountLeaderboard = defineEndpoint("account_leaderboard", {
+  description:
+    "Per-account interactions for the trailing window and the window before it",
+  params: {
+    organization_id: p.string().describe("Organization id"),
+    days: p.int32().optional(7).describe("Length of each window in days"),
+  },
+  nodes: [
+    node({
+      name: "leaderboard_post_metrics",
+      sql: `
+        SELECT
+          provider,
+          platform_post_id,
+          argMax(impressions, captured_at) AS impressions,
+          argMax(likes, captured_at) AS likes,
+          argMax(replies, captured_at) AS replies,
+          argMax(reposts, captured_at) AS reposts
+        FROM social_post_stats
+        WHERE organization_id = {{String(organization_id)}}
+        GROUP BY provider, platform_post_id
+      `,
+    }),
+    node({
+      name: "leaderboard_window_posts",
+      sql: `
+        SELECT
+          provider,
+          platform_post_id,
+          argMax(provider_account_id, captured_at) AS provider_account_id,
+          min(posted_at) AS first_posted_at
+        FROM social_posts
+        WHERE organization_id = {{String(organization_id)}}
+          AND posted_at >= now() - toIntervalDay({{Int32(days, 7)}} * 2)
+          AND posted_at <= now()
+        GROUP BY provider, platform_post_id
+      `,
+    }),
+    node({
+      name: "leaderboard_totals",
+      sql: `
+        SELECT
+          window_posts.provider AS provider,
+          window_posts.provider_account_id AS provider_account_id,
+          countIf(window_posts.first_posted_at >= now() - toIntervalDay({{Int32(days, 7)}})) AS posts,
+          sumIf(
+            coalesce(metrics.likes, 0) + coalesce(metrics.replies, 0) + coalesce(metrics.reposts, 0),
+            window_posts.first_posted_at >= now() - toIntervalDay({{Int32(days, 7)}})
+          ) AS interactions,
+          sumIf(
+            coalesce(metrics.impressions, 0),
+            window_posts.first_posted_at >= now() - toIntervalDay({{Int32(days, 7)}})
+          ) AS impressions,
+          countIf(window_posts.first_posted_at < now() - toIntervalDay({{Int32(days, 7)}})) AS prev_posts,
+          sumIf(
+            coalesce(metrics.likes, 0) + coalesce(metrics.replies, 0) + coalesce(metrics.reposts, 0),
+            window_posts.first_posted_at < now() - toIntervalDay({{Int32(days, 7)}})
+          ) AS prev_interactions,
+          sumIf(
+            coalesce(metrics.impressions, 0),
+            window_posts.first_posted_at < now() - toIntervalDay({{Int32(days, 7)}})
+          ) AS prev_impressions
+        FROM leaderboard_window_posts AS window_posts
+        LEFT JOIN leaderboard_post_metrics AS metrics
+          ON metrics.provider = window_posts.provider
+          AND metrics.platform_post_id = window_posts.platform_post_id
+        GROUP BY window_posts.provider, window_posts.provider_account_id
+        ORDER BY interactions DESC
+      `,
+    }),
+  ],
+  output: {
+    provider: t.string(),
+    provider_account_id: t.string(),
+    posts: t.uint64(),
+    interactions: t.uint64(),
+    impressions: t.uint64(),
+    prev_posts: t.uint64(),
+    prev_interactions: t.uint64(),
+    prev_impressions: t.uint64(),
+  },
+});
+
+export type AccountLeaderboardParams = InferParams<typeof accountLeaderboard>;
+export type AccountLeaderboardRow = InferOutputRow<typeof accountLeaderboard>;
+
 export const topPosts = defineEndpoint("top_posts", {
   description: "Best performing posts by latest engagement snapshot",
   params: {

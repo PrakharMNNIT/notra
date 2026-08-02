@@ -1392,6 +1392,36 @@ export const connectedSocialAccounts = pgTable(
   ]
 );
 
+export const trackedSocialAccounts = pgTable(
+  "tracked_social_accounts",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    providerAccountId: text("provider_account_id").notNull(),
+    username: text("username").notNull(),
+    displayName: text("display_name"),
+    profileImageUrl: text("profile_image_url"),
+    verified: boolean("verified").notNull().default(false),
+    verifiedType: text("verified_type"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("trackedSocialAccounts_organizationId_idx").on(table.organizationId),
+    uniqueIndex("trackedSocialAccounts_org_provider_account_uidx").on(
+      table.organizationId,
+      table.provider,
+      table.providerAccountId
+    ),
+  ]
+);
+
 export const organizationNotificationSettings = pgTable(
   "organization_notification_settings",
   {
@@ -2411,6 +2441,16 @@ export const connectedSocialAccountsRelations = relations(
   ({ one }) => ({
     organization: one(organizations, {
       fields: [connectedSocialAccounts.organizationId],
+      references: [organizations.id],
+    }),
+  })
+);
+
+export const trackedSocialAccountsRelations = relations(
+  trackedSocialAccounts,
+  ({ one }) => ({
+    organization: one(organizations, {
+      fields: [trackedSocialAccounts.organizationId],
       references: [organizations.id],
     }),
   })

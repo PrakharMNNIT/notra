@@ -1,0 +1,80 @@
+import { array, boolean, enum as enumType, number, object, string } from "zod";
+import {
+  GEO_DISCOVERY_MAX_ALIASES,
+  GEO_DISCOVERY_MAX_COMPETITORS,
+  GEO_DISCOVERY_MAX_PROMPTS,
+  GEO_DISCOVERY_MIN_COMPETITORS,
+  GEO_DISCOVERY_MIN_PROMPTS,
+  GEO_PROMPT_MAX_LENGTH,
+  GEO_PROMPT_MIN_LENGTH,
+} from "@/constants/geo";
+import { publicWebsiteUrlSchema } from "@/schemas/url";
+
+const MAX_ALIASES = 10;
+const MAX_COMPETITORS = 10;
+const MAX_JUDGE_COMPETITORS = 15;
+const MAX_EXCERPT_LENGTH = 300;
+const MAX_DAYS = 365;
+const MIN_PROMPT_LENGTH = GEO_PROMPT_MIN_LENGTH;
+const MAX_PROMPT_LENGTH = GEO_PROMPT_MAX_LENGTH;
+
+export const geoSettingsUpsertInputSchema = object({
+  organizationId: string().min(1),
+  companyName: string().min(1),
+  aliases: array(string().min(1)).max(MAX_ALIASES),
+  competitors: array(string().min(1)).max(MAX_COMPETITORS),
+  enabled: boolean(),
+});
+
+export const geoOrganizationInputSchema = object({
+  organizationId: string().min(1),
+});
+
+export const geoTimeseriesInputSchema = object({
+  organizationId: string().min(1),
+  days: number().int().min(1).max(MAX_DAYS).optional(),
+});
+
+export const geoPromptCreateInputSchema = object({
+  organizationId: string().min(1),
+  prompt: string().min(MIN_PROMPT_LENGTH).max(MAX_PROMPT_LENGTH),
+});
+
+export const geoPromptDeleteInputSchema = object({
+  organizationId: string().min(1),
+  promptId: string().min(1),
+});
+
+export const geoPromptToggleInputSchema = object({
+  organizationId: string().min(1),
+  promptId: string().min(1),
+  enabled: boolean(),
+});
+
+export const geoScanPayloadSchema = object({
+  organizationId: string().min(1),
+});
+
+export const geoGenerateFromWebsiteInputSchema = object({
+  organizationId: string().min(1),
+  url: publicWebsiteUrlSchema,
+});
+
+export const geoWebsiteDiscoverySchema = object({
+  companyName: string().min(1),
+  aliases: array(string().min(1)).max(GEO_DISCOVERY_MAX_ALIASES),
+  competitors: array(string().min(1))
+    .min(GEO_DISCOVERY_MIN_COMPETITORS)
+    .max(GEO_DISCOVERY_MAX_COMPETITORS),
+  prompts: array(string().min(MIN_PROMPT_LENGTH).max(MAX_PROMPT_LENGTH))
+    .min(GEO_DISCOVERY_MIN_PROMPTS)
+    .max(GEO_DISCOVERY_MAX_PROMPTS),
+});
+
+export const geoJudgeResultSchema = object({
+  mentioned: boolean(),
+  position: number().nullable(),
+  sentiment: enumType(["positive", "neutral", "negative"]).nullable(),
+  competitors: array(string()).max(MAX_JUDGE_COMPETITORS),
+  excerpt: string().max(MAX_EXCERPT_LENGTH),
+});

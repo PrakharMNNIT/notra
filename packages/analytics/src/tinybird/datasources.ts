@@ -110,8 +110,31 @@ export const socialPostSources = defineDatasource("social_post_sources", {
   }),
 });
 
+export const geoMentionChecks = defineDatasource("geo_mention_checks", {
+  description:
+    "AI engine mention checks: one row per prompt x engine per scan, with extracted mention data",
+  schema: {
+    organization_id: t.string(),
+    scan_id: t.string(),
+    engine: t.string().lowCardinality(),
+    prompt_id: t.string().lowCardinality(),
+    prompt: t.string(),
+    captured_at: t.dateTime(),
+    mentioned: t.bool(),
+    position: t.uint64().nullable(),
+    sentiment: t.string().lowCardinality().nullable(),
+    competitors: t.array(t.string()).jsonPath("$.competitors[:]"),
+    excerpt: t.string(),
+  },
+  engine: engine.mergeTree({
+    sortingKey: ["organization_id", "engine", "prompt_id", "captured_at"],
+    partitionKey: "toYYYYMM(captured_at)",
+  }),
+});
+
 export type SocialAccountRow = InferRow<typeof socialAccounts>;
 export type SocialAccountStatsRow = InferRow<typeof socialAccountStats>;
 export type SocialPostRow = InferRow<typeof socialPosts>;
 export type SocialPostStatsRow = InferRow<typeof socialPostStats>;
 export type SocialPostSourceRow = InferRow<typeof socialPostSources>;
+export type GeoMentionCheckRow = InferRow<typeof geoMentionChecks>;

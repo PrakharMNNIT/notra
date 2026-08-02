@@ -449,6 +449,13 @@
       "when": 1785669117308,
       "tag": "0063_slimy_hellcat",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1785669176828,
+      "tag": "0064_exotic_scourge",
+      "breakpoints": true
     }
   ]
 }

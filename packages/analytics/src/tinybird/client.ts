@@ -1,5 +1,7 @@
 import { type IngestResult, type QueryResult, Tinybird } from "@tinybirdco/sdk";
 import {
+  type GeoMentionCheckRow,
+  geoMentionChecks,
   type SocialAccountRow,
   type SocialAccountStatsRow,
   type SocialPostRow,
@@ -21,6 +23,14 @@ import {
   type FollowerGrowthParams,
   type FollowerGrowthRow,
   followerGrowth,
+  type GeoCompetitorShareRow,
+  type GeoOverviewRow,
+  type GeoPromptResultsRow,
+  type GeoTimeseriesRow,
+  geoCompetitorShare,
+  geoOverview,
+  geoPromptResults,
+  geoTimeseries,
   type NotraAdoptionRow,
   notraAdoption,
   type PostingPerformanceParams,
@@ -51,6 +61,7 @@ function createTinybirdClient() {
       socialPosts,
       socialPostStats,
       socialPostSources,
+      geoMentionChecks,
     },
     pipes: {
       socialOverview,
@@ -60,6 +71,10 @@ function createTinybirdClient() {
       postingPerformance,
       notraAdoption,
       postMetricsLookup,
+      geoOverview,
+      geoTimeseries,
+      geoPromptResults,
+      geoCompetitorShare,
       accountLeaderboard,
     },
   });
@@ -131,6 +146,14 @@ export function ingestSocialPostSources(
   );
 }
 
+export function ingestGeoMentionChecks(
+  rows: GeoMentionCheckRow[]
+): Promise<IngestResult | null> {
+  return ingestRows(rows, (client, batch) =>
+    client.geoMentionChecks.ingestBatch(batch)
+  );
+}
+
 export async function querySocialOverview(
   params: SocialOverviewParams
 ): Promise<QueryResult<SocialOverviewRow> | null> {
@@ -189,6 +212,50 @@ export async function queryNotraAdoption(params: {
     return null;
   }
   return await client.notraAdoption.query(params);
+}
+
+export async function queryGeoOverview(params: {
+  organization_id: string;
+  days?: number;
+}): Promise<QueryResult<GeoOverviewRow> | null> {
+  const client = getTinybirdClient();
+  if (!client) {
+    return null;
+  }
+  return await client.geoOverview.query(params);
+}
+
+export async function queryGeoTimeseries(params: {
+  organization_id: string;
+  days?: number;
+}): Promise<QueryResult<GeoTimeseriesRow> | null> {
+  const client = getTinybirdClient();
+  if (!client) {
+    return null;
+  }
+  return await client.geoTimeseries.query(params);
+}
+
+export async function queryGeoPromptResults(params: {
+  organization_id: string;
+}): Promise<QueryResult<GeoPromptResultsRow> | null> {
+  const client = getTinybirdClient();
+  if (!client) {
+    return null;
+  }
+  return await client.geoPromptResults.query(params);
+}
+
+export async function queryGeoCompetitorShare(params: {
+  organization_id: string;
+  days?: number;
+  limit?: number;
+}): Promise<QueryResult<GeoCompetitorShareRow> | null> {
+  const client = getTinybirdClient();
+  if (!client) {
+    return null;
+  }
+  return await client.geoCompetitorShare.query(params);
 }
 
 export async function queryAccountLeaderboard(

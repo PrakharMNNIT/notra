@@ -476,7 +476,143 @@ export const notraAdoption = defineEndpoint("notra_adoption", {
   },
 });
 
+export const geoOverview = defineEndpoint("geo_overview", {
+  description: "AI mention rate per engine over the trailing window",
+  params: {
+    organization_id: p.string().describe("Organization id"),
+    days: p.int32().optional(30).describe("Number of trailing days"),
+  },
+  nodes: [
+    node({
+      name: "per_engine",
+      sql: `
+        SELECT
+          engine,
+          count() AS checks,
+          countIf(mentioned) AS mentions,
+          round(countIf(mentioned) / count(), 3) AS mention_rate,
+          round(avgIf(position, mentioned AND position IS NOT NULL), 1) AS avg_position,
+          max(captured_at) AS last_checked_at
+        FROM geo_mention_checks
+        WHERE organization_id = {{String(organization_id)}}
+          AND captured_at >= now() - INTERVAL {{Int32(days, 30)}} DAY
+        GROUP BY engine
+        ORDER BY mention_rate DESC
+      `,
+    }),
+  ],
+  output: {
+    engine: t.string(),
+    checks: t.uint64(),
+    mentions: t.uint64(),
+    mention_rate: t.float64(),
+    avg_position: t.float64().nullable(),
+    last_checked_at: t.dateTime(),
+  },
+});
+
+export const geoTimeseries = defineEndpoint("geo_timeseries", {
+  description: "Daily AI mention rate per engine",
+  params: {
+    organization_id: p.string().describe("Organization id"),
+    days: p.int32().optional(30).describe("Number of trailing days"),
+  },
+  nodes: [
+    node({
+      name: "daily",
+      sql: `
+        SELECT
+          toDate(captured_at) AS day,
+          engine,
+          count() AS checks,
+          countIf(mentioned) AS mentions
+        FROM geo_mention_checks
+        WHERE organization_id = {{String(organization_id)}}
+          AND captured_at >= now() - INTERVAL {{Int32(days, 30)}} DAY
+        GROUP BY day, engine
+        ORDER BY day ASC
+      `,
+    }),
+  ],
+  output: {
+    day: t.date(),
+    engine: t.string(),
+    checks: t.uint64(),
+    mentions: t.uint64(),
+  },
+});
+
+export const geoPromptResults = defineEndpoint("geo_prompt_results", {
+  description: "Latest result per prompt and engine",
+  params: {
+    organization_id: p.string().describe("Organization id"),
+  },
+  nodes: [
+    node({
+      name: "latest",
+      sql: `
+        SELECT
+          prompt_id,
+          engine,
+          argMax(prompt, captured_at) AS prompt,
+          argMax(mentioned, captured_at) AS mentioned,
+          argMax(position, captured_at) AS position,
+          argMax(sentiment, captured_at) AS sentiment,
+          argMax(excerpt, captured_at) AS excerpt,
+          max(captured_at) AS last_checked_at
+        FROM geo_mention_checks
+        WHERE organization_id = {{String(organization_id)}}
+        GROUP BY prompt_id, engine
+        ORDER BY prompt_id ASC, engine ASC
+      `,
+    }),
+  ],
+  output: {
+    prompt_id: t.string(),
+    engine: t.string(),
+    prompt: t.string(),
+    mentioned: t.bool(),
+    position: t.uint64().nullable(),
+    sentiment: t.string().nullable(),
+    excerpt: t.string(),
+    last_checked_at: t.dateTime(),
+  },
+});
+
+export const geoCompetitorShare = defineEndpoint("geo_competitor_share", {
+  description: "Competitor brands surfaced by AI engines, by mention count",
+  params: {
+    organization_id: p.string().describe("Organization id"),
+    days: p.int32().optional(30).describe("Number of trailing days"),
+    limit: p.int32().optional(10).describe("Max competitors"),
+  },
+  nodes: [
+    node({
+      name: "share",
+      sql: `
+        SELECT
+          arrayJoin(competitors) AS brand,
+          count() AS mentions
+        FROM geo_mention_checks
+        WHERE organization_id = {{String(organization_id)}}
+          AND captured_at >= now() - INTERVAL {{Int32(days, 30)}} DAY
+        GROUP BY brand
+        ORDER BY mentions DESC
+        LIMIT {{Int32(limit, 10)}}
+      `,
+    }),
+  ],
+  output: {
+    brand: t.string(),
+    mentions: t.uint64(),
+  },
+});
+
 export type NotraAdoptionRow = InferOutputRow<typeof notraAdoption>;
+export type GeoOverviewRow = InferOutputRow<typeof geoOverview>;
+export type GeoTimeseriesRow = InferOutputRow<typeof geoTimeseries>;
+export type GeoPromptResultsRow = InferOutputRow<typeof geoPromptResults>;
+export type GeoCompetitorShareRow = InferOutputRow<typeof geoCompetitorShare>;
 
 export const postMetricsLookup = defineEndpoint("post_metrics_lookup", {
   description: "Latest metric snapshot for specific posts by platform post id",

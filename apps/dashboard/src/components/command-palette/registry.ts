@@ -1,4 +1,5 @@
 import {
+  AiBrowserIcon,
   Analytics01Icon,
   AnalyticsUpIcon,
   Calendar03Icon,
@@ -51,6 +52,30 @@ export const COMMAND_ROUTES: CommandRoute[] = [
     icon: Analytics01Icon,
     section: "Navigation",
     path: (slug) => `/${slug}/analytics`,
+  },
+  {
+    id: "geo",
+    label: "GEO Overview",
+    keywords: ["ai", "mentions", "visibility", "chatgpt", "share of voice"],
+    icon: AiBrowserIcon,
+    section: "Navigation",
+    path: (slug) => `/${slug}/geo`,
+  },
+  {
+    id: "geo-prompts",
+    label: "GEO Prompts",
+    keywords: ["ai", "prompts", "questions", "tracking"],
+    icon: AiBrowserIcon,
+    section: "Navigation",
+    path: (slug) => `/${slug}/geo/prompts`,
+  },
+  {
+    id: "geo-competitors",
+    label: "GEO Competitors",
+    keywords: ["ai", "competitors", "share of voice", "brands"],
+    icon: AiBrowserIcon,
+    section: "Navigation",
+    path: (slug) => `/${slug}/geo/competitors`,
   },
   {
     id: "content",

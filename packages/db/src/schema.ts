@@ -1452,6 +1452,49 @@ export const organizationNotificationSettings = pgTable(
   ]
 );
 
+export const geoSettings = pgTable(
+  "geo_settings",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    companyName: text("company_name").notNull(),
+    aliases: text("aliases").array().notNull().default(sql`ARRAY[]::text[]`),
+    competitors: text("competitors")
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("geoSettings_organizationId_uidx").on(table.organizationId),
+  ]
+);
+
+export const geoPrompts = pgTable(
+  "geo_prompts",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    prompt: text("prompt").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [index("geoPrompts_organizationId_idx").on(table.organizationId)]
+);
+
 export const socialExperiments = pgTable(
   "social_experiments",
   {
@@ -2114,6 +2157,8 @@ export const organizationsRelations = relations(
     mcpSessionToolActivations: many(mcpSessionToolActivations),
     brandSettings: many(brandSettings),
     notificationSettings: one(organizationNotificationSettings),
+    geoSettings: one(geoSettings),
+    geoPrompts: many(geoPrompts),
     connectedSocialAccounts: many(connectedSocialAccounts),
     postCollections: many(postCollections),
     posts: many(posts),
@@ -2494,6 +2539,13 @@ export const organizationNotificationSettingsRelations = relations(
   })
 );
 
+export const geoSettingsRelations = relations(geoSettings, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [geoSettings.organizationId],
+    references: [organizations.id],
+  }),
+}));
+
 export const socialExperimentsRelations = relations(
   socialExperiments,
   ({ one }) => ({
@@ -2503,6 +2555,13 @@ export const socialExperimentsRelations = relations(
     }),
   })
 );
+
+export const geoPromptsRelations = relations(geoPrompts, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [geoPrompts.organizationId],
+    references: [organizations.id],
+  }),
+}));
 
 export const postCollectionsRelations = relations(
   postCollections,

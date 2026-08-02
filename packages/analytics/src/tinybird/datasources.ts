@@ -1,0 +1,117 @@
+import { defineDatasource, engine, type InferRow, t } from "@tinybirdco/sdk";
+
+export const socialAccounts = defineDatasource("social_accounts", {
+  description:
+    "Connected social account dimension snapshots for Twitter/X and LinkedIn",
+  schema: {
+    organization_id: t.string(),
+    account_id: t.string(),
+    provider: t.string().lowCardinality(),
+    provider_account_id: t.string(),
+    username: t.string(),
+    display_name: t.string().nullable(),
+    profile_image_url: t.string().nullable(),
+    profile_url: t.string().nullable(),
+    account_type: t.string().nullable(),
+    verified: t.bool(),
+    captured_at: t.dateTime(),
+  },
+  engine: engine.replacingMergeTree({
+    sortingKey: ["organization_id", "provider", "provider_account_id"],
+    ver: "captured_at",
+  }),
+});
+
+export const socialAccountStats = defineDatasource("social_account_stats", {
+  description:
+    "Append-only account-level stat snapshots; metrics a platform does not expose are null",
+  schema: {
+    organization_id: t.string(),
+    account_id: t.string(),
+    provider: t.string().lowCardinality(),
+    provider_account_id: t.string(),
+    captured_at: t.dateTime(),
+    followers_count: t.uint64().nullable(),
+    following_count: t.uint64().nullable(),
+    posts_count: t.uint64().nullable(),
+    listed_count: t.uint64().nullable(),
+  },
+  engine: engine.mergeTree({
+    sortingKey: [
+      "organization_id",
+      "provider",
+      "provider_account_id",
+      "captured_at",
+    ],
+    partitionKey: "toYYYYMM(captured_at)",
+  }),
+});
+
+export const socialPosts = defineDatasource("social_posts", {
+  description:
+    "Published post dimension rows for Twitter/X and LinkedIn, keyed by platform post id",
+  schema: {
+    organization_id: t.string(),
+    account_id: t.string(),
+    provider: t.string().lowCardinality(),
+    provider_account_id: t.string(),
+    platform_post_id: t.string(),
+    url: t.string().nullable(),
+    content: t.string(),
+    posted_at: t.dateTime(),
+    captured_at: t.dateTime(),
+  },
+  engine: engine.replacingMergeTree({
+    sortingKey: ["organization_id", "provider", "platform_post_id"],
+    ver: "captured_at",
+  }),
+});
+
+export const socialPostStats = defineDatasource("social_post_stats", {
+  description:
+    "Append-only post-level stat snapshots; metrics a platform does not expose are null",
+  schema: {
+    organization_id: t.string(),
+    provider: t.string().lowCardinality(),
+    provider_account_id: t.string(),
+    platform_post_id: t.string(),
+    captured_at: t.dateTime(),
+    impressions: t.uint64().nullable(),
+    likes: t.uint64().nullable(),
+    replies: t.uint64().nullable(),
+    reposts: t.uint64().nullable(),
+    quotes: t.uint64().nullable(),
+    bookmarks: t.uint64().nullable(),
+  },
+  engine: engine.mergeTree({
+    sortingKey: [
+      "organization_id",
+      "provider",
+      "platform_post_id",
+      "captured_at",
+    ],
+    partitionKey: "toYYYYMM(captured_at)",
+  }),
+});
+
+export const socialPostSources = defineDatasource("social_post_sources", {
+  description:
+    "Append-only ledger marking posts that were published through Notra",
+  schema: {
+    organization_id: t.string(),
+    provider: t.string().lowCardinality(),
+    provider_account_id: t.string(),
+    platform_post_id: t.string(),
+    source: t.string().lowCardinality(),
+    captured_at: t.dateTime(),
+  },
+  engine: engine.mergeTree({
+    sortingKey: ["organization_id", "provider", "platform_post_id"],
+  }),
+});
+
+export type SocialAccountRow = InferRow<typeof socialAccounts>;
+export type SocialAccountStatsRow = InferRow<typeof socialAccountStats>;
+export type SocialPostRow = InferRow<typeof socialPosts>;
+export type SocialPostStatsRow = InferRow<typeof socialPostStats>;
+export type SocialPostSourceRow = InferRow<typeof socialPostSources>;

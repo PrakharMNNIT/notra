@@ -1,6 +1,7 @@
 "use client";
 import { useFlag } from "@databuddy/sdk/react";
 import {
+  Analytics01Icon,
   AnalyticsUpIcon,
   Calendar03Icon,
   Home01Icon,
@@ -59,6 +60,12 @@ const navMainItems: NavMainItem[] = [
     link: "/content",
     icon: NoteIcon,
     label: "Content",
+    category: "workspace",
+  },
+  {
+    link: "/analytics",
+    icon: Analytics01Icon,
+    label: "Analytics",
     category: "workspace",
   },
   {

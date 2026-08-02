@@ -1,4 +1,5 @@
 import {
+  Analytics01Icon,
   AnalyticsUpIcon,
   Calendar03Icon,
   Comment01Icon,
@@ -41,6 +42,14 @@ export const COMMAND_ROUTES: CommandRoute[] = [
     icon: Message01Icon,
     section: "Navigation",
     path: (slug) => `/${slug}/chat`,
+  },
+  {
+    id: "analytics",
+    label: "Analytics",
+    keywords: ["stats", "metrics", "followers", "engagement", "social"],
+    icon: Analytics01Icon,
+    section: "Navigation",
+    path: (slug) => `/${slug}/analytics`,
   },
   {
     id: "content",

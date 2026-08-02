@@ -1,0 +1,73 @@
+import {
+  ingestSocialAccountStats,
+  ingestSocialAccounts,
+  ingestSocialPostStats,
+  ingestSocialPosts,
+  isTinybirdConfigured,
+} from "@notra/analytics/tinybird/client";
+import { db } from "@notra/db/drizzle";
+import { connectedSocialAccounts } from "@notra/db/schema";
+import { eq } from "drizzle-orm";
+import { buildAccountRow } from "@/lib/analytics/rows";
+import { collectTwitterRows } from "@/lib/analytics/twitter-sync";
+import type { SyncableSocialAccount } from "@/types/analytics";
+
+export async function listSyncableAccounts(
+  organizationId?: string
+): Promise<SyncableSocialAccount[]> {
+  "use step";
+  if (!isTinybirdConfigured()) {
+    return [];
+  }
+  const accounts = await db.query.connectedSocialAccounts.findMany({
+    columns: {
+      id: true,
+      organizationId: true,
+      provider: true,
+      providerAccountId: true,
+      username: true,
+      displayName: true,
+      profileImageUrl: true,
+      verified: true,
+    },
+    ...(organizationId
+      ? { where: eq(connectedSocialAccounts.organizationId, organizationId) }
+      : {}),
+  });
+
+  return accounts.map((account) => ({
+    id: account.id,
+    organizationId: account.organizationId,
+    provider: account.provider,
+    providerAccountId: account.providerAccountId,
+    username: account.username,
+    displayName: account.displayName,
+    profileImageUrl: account.profileImageUrl,
+    verified: account.verified ?? false,
+  }));
+}
+
+export async function snapshotAccountDimensions(
+  accounts: SyncableSocialAccount[]
+): Promise<number> {
+  "use step";
+  const capturedAt = new Date();
+  const rows = accounts.map((account) => buildAccountRow(account, capturedAt));
+  await ingestSocialAccounts(rows);
+  return rows.length;
+}
+
+export async function syncTwitterAnalytics(
+  accounts: SyncableSocialAccount[]
+): Promise<{ accountStats: number; posts: number }> {
+  "use step";
+  const capturedAt = new Date();
+  const twitterAccounts = accounts.filter(
+    (account) => account.provider === "twitter"
+  );
+  const rows = await collectTwitterRows(twitterAccounts, capturedAt);
+  await ingestSocialAccountStats(rows.accountStats);
+  await ingestSocialPosts(rows.posts);
+  await ingestSocialPostStats(rows.postStats);
+  return { accountStats: rows.accountStats.length, posts: rows.posts.length };
+}

@@ -38,6 +38,7 @@
     "@lexical/utils": "^0.39.0",
     "@neoconfetti/react": "^1.0.0",
     "@notra/ai": "workspace:*",
+    "@notra/analytics": "workspace:*",
     "@notra/content-generation": "workspace:*",
     "@notra/db": "workspace:*",
     "@notra/email": "workspace:*",

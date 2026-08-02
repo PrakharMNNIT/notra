@@ -477,3 +477,70 @@ export const notraAdoption = defineEndpoint("notra_adoption", {
 });
 
 export type NotraAdoptionRow = InferOutputRow<typeof notraAdoption>;
+
+export const postMetricsLookup = defineEndpoint("post_metrics_lookup", {
+  description: "Latest metric snapshot for specific posts by platform post id",
+  params: {
+    organization_id: p.string().describe("Organization id"),
+    post_ids: p.array(p.string()).describe("Platform post ids"),
+  },
+  nodes: [
+    node({
+      name: "stats_lookup",
+      sql: `
+        SELECT
+          provider,
+          platform_post_id,
+          argMax(impressions, captured_at) AS impressions,
+          argMax(likes, captured_at) AS likes,
+          argMax(replies, captured_at) AS replies,
+          argMax(reposts, captured_at) AS reposts,
+          argMax(bookmarks, captured_at) AS bookmarks,
+          max(captured_at) AS last_captured_at
+        FROM social_post_stats
+        WHERE organization_id = {{String(organization_id)}}
+          AND platform_post_id IN {{Array(post_ids, 'String')}}
+        GROUP BY provider, platform_post_id
+      `,
+    }),
+    node({
+      name: "lookup",
+      sql: `
+        SELECT
+          posts.provider AS provider,
+          posts.platform_post_id AS platform_post_id,
+          argMax(posts.content, posts.captured_at) AS content,
+          argMax(posts.url, posts.captured_at) AS url,
+          min(posts.posted_at) AS first_posted_at,
+          any(stats.impressions) AS impressions,
+          any(stats.likes) AS likes,
+          any(stats.replies) AS replies,
+          any(stats.reposts) AS reposts,
+          any(stats.bookmarks) AS bookmarks,
+          any(stats.last_captured_at) AS last_captured_at
+        FROM social_posts AS posts
+        LEFT JOIN stats_lookup AS stats
+          ON stats.provider = posts.provider
+          AND stats.platform_post_id = posts.platform_post_id
+        WHERE posts.organization_id = {{String(organization_id)}}
+          AND posts.platform_post_id IN {{Array(post_ids, 'String')}}
+        GROUP BY posts.provider, posts.platform_post_id
+      `,
+    }),
+  ],
+  output: {
+    provider: t.string(),
+    platform_post_id: t.string(),
+    content: t.string(),
+    url: t.string().nullable(),
+    first_posted_at: t.dateTime(),
+    impressions: t.uint64().nullable(),
+    likes: t.uint64().nullable(),
+    replies: t.uint64().nullable(),
+    reposts: t.uint64().nullable(),
+    bookmarks: t.uint64().nullable(),
+    last_captured_at: t.dateTime().nullable(),
+  },
+});
+
+export type PostMetricsLookupRow = InferOutputRow<typeof postMetricsLookup>;

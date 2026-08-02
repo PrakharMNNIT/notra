@@ -442,6 +442,13 @@
       "when": 1785669058664,
       "tag": "0062_brave_menace",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1785669117308,
+      "tag": "0063_slimy_hellcat",
+      "breakpoints": true
     }
   ]
 }

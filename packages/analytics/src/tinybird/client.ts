@@ -25,7 +25,9 @@ import {
   notraAdoption,
   type PostingPerformanceParams,
   type PostingPerformanceRow,
+  type PostMetricsLookupRow,
   postingPerformance,
+  postMetricsLookup,
   type SocialOverviewParams,
   type SocialOverviewRow,
   socialOverview,
@@ -57,6 +59,7 @@ function createTinybirdClient() {
       followerGrowth,
       postingPerformance,
       notraAdoption,
+      postMetricsLookup,
       accountLeaderboard,
     },
   });
@@ -196,4 +199,15 @@ export async function queryAccountLeaderboard(
     return null;
   }
   return await client.accountLeaderboard.query(params);
+}
+
+export async function queryPostMetricsLookup(params: {
+  organization_id: string;
+  post_ids: string[];
+}): Promise<QueryResult<PostMetricsLookupRow> | null> {
+  const client = getTinybirdClient();
+  if (!client) {
+    return null;
+  }
+  return await client.postMetricsLookup.query(params);
 }

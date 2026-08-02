@@ -13,6 +13,7 @@ import {
   PlugIcon,
   RainbowIcon,
   SearchIcon,
+  TestTube01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Badge } from "@notra/ui/components/ui/badge";
@@ -90,6 +91,12 @@ const navMainItems: NavMainItem[] = [
     link: "/automation/events",
     icon: Notification03Icon,
     label: "Events",
+    category: "automation",
+  },
+  {
+    link: "/experiments",
+    icon: TestTube01Icon,
+    label: "A/B Tests",
     category: "automation",
   },
   {

@@ -5,7 +5,6 @@ import { automationRouter } from "./routers/automation";
 import { brandRouter } from "./routers/brand";
 import { contentRouter } from "./routers/content";
 import { feedbackRouter } from "./routers/feedback";
-import { geoRouter } from "./routers/geo";
 import { githubRouter } from "./routers/github";
 import { integrationsRouter } from "./routers/integrations";
 import { irisRouter } from "./routers/iris";
@@ -26,7 +25,6 @@ export const dashboardRouter = {
   brand: brandRouter,
   content: contentRouter,
   feedback: feedbackRouter,
-  geo: geoRouter,
   github: githubRouter,
   iris: irisRouter,
   integrations: integrationsRouter,

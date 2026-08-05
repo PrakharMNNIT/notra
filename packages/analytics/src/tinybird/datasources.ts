@@ -261,6 +261,79 @@ export const aiTrafficEvents = defineDatasource("ai_traffic_events", {
   }),
 });
 
+export const geoTrafficEvents = defineDatasource("geo_traffic_events", {
+  description:
+    "Append-only log of every request captured by the geo SDK, classified into AI crawlers, AI assistant referrals and humans",
+  schema: {
+    organization_id: t.string(),
+    captured_at: t.dateTime(),
+    visitor_type: t.string().lowCardinality(),
+    source: t.string().lowCardinality(),
+    agent: t.string().lowCardinality(),
+    category: t.string().lowCardinality(),
+    confidence: t.string().lowCardinality(),
+    path: t.string(),
+    host: t.string(),
+    method: t.string().lowCardinality(),
+    referer: t.string(),
+    ua: t.string(),
+    country: t.string().lowCardinality(),
+    language: t.string().lowCardinality(),
+    request_id: t.string(),
+    journey_id: t.string(),
+    wants_markdown: t.bool(),
+  },
+  engine: engine.mergeTree({
+    sortingKey: ["organization_id", "visitor_type", "captured_at"],
+    partitionKey: "toYYYYMM(captured_at)",
+    ttl: "captured_at + toIntervalDay(396)",
+    settings: { ttl_only_drop_parts: 1 },
+  }),
+});
+
+export const geoTrafficDaily = defineDatasource("geo_traffic_daily", {
+  description:
+    "Daily rollup of geo_traffic_events per organization, visitor type and source; read with countMerge/uniqExactMerge/maxMerge/anyMerge",
+  schema: {
+    day: t.date(),
+    organization_id: t.string(),
+    visitor_type: t.string().lowCardinality(),
+    source: t.string().lowCardinality(),
+    visits_state: t.aggregateFunction("count"),
+    markdown_visits_state: t.aggregateFunction("countIf", t.uint8()),
+    paths_state: t.aggregateFunction("uniqExact", t.string()),
+    last_seen_state: t.aggregateFunction("max", t.dateTime()),
+    agent_state: t.aggregateFunction("any", t.string().lowCardinality()),
+    category_state: t.aggregateFunction("any", t.string().lowCardinality()),
+    confidence_state: t.aggregateFunction("any", t.string().lowCardinality()),
+  },
+  engine: engine.aggregatingMergeTree({
+    sortingKey: ["organization_id", "visitor_type", "source", "day"],
+    partitionKey: "toYYYYMM(day)",
+  }),
+});
+
+export const geoTrafficPagesDaily = defineDatasource(
+  "geo_traffic_pages_daily",
+  {
+    description:
+      "Daily rollup of geo_traffic_events per organization, visitor type, source and path; read with countMerge/maxMerge",
+    schema: {
+      day: t.date(),
+      organization_id: t.string(),
+      visitor_type: t.string().lowCardinality(),
+      source: t.string().lowCardinality(),
+      path: t.string(),
+      visits_state: t.aggregateFunction("count"),
+      last_seen_state: t.aggregateFunction("max", t.dateTime()),
+    },
+    engine: engine.aggregatingMergeTree({
+      sortingKey: ["organization_id", "visitor_type", "source", "day", "path"],
+      partitionKey: "toYYYYMM(day)",
+    }),
+  }
+);
+
 export type SocialAccountRow = InferRow<typeof socialAccounts>;
 export type SocialAccountStatsRow = InferRow<typeof socialAccountStats>;
 export type SocialPostRow = InferRow<typeof socialPosts>;
@@ -269,3 +342,4 @@ export type SocialPostSourceRow = InferRow<typeof socialPostSources>;
 export type GeoMentionCheckRow = InferRow<typeof geoMentionChecks>;
 export type ModelUsageShareRow = InferRow<typeof modelUsageShare>;
 export type AiTrafficEventRow = InferRow<typeof aiTrafficEvents>;
+export type GeoTrafficEventRow = InferRow<typeof geoTrafficEvents>;

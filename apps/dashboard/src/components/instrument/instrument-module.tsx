@@ -1,4 +1,10 @@
-import { DitherAvatar } from "@notra/ui/components/dither-kit/avatar";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@notra/ui/components/ui/card";
 import { cn } from "@/lib/utils";
 import type {
   InstrumentEmptyProps,
@@ -14,41 +20,66 @@ export function InstrumentModule({
   bodyClassName,
 }: InstrumentModuleProps) {
   return (
-    <section className={cn("flex min-w-0 flex-1 flex-col bg-card", className)}>
-      <header className="flex min-h-9 items-center justify-between gap-3 border-border border-b px-3 py-1.5">
-        <h2 className="font-mono text-[0.625rem] text-muted-foreground uppercase tracking-[0.14em]">
+    <Card className={cn("min-w-0", className)}>
+      <CardHeader className="items-center">
+        <CardTitle className="text-sm capitalize">{eyebrow}</CardTitle>
+        {(readout || action) && (
+          <CardAction className="flex min-w-0 items-center gap-2 self-center">
+            {readout && (
+              <span className="truncate text-muted-foreground text-xs capitalize tabular-nums">
+                {readout}
+              </span>
+            )}
+            {action}
+          </CardAction>
+        )}
+      </CardHeader>
+      <CardContent className={cn("min-w-0 flex-1", bodyClassName)}>
+        {children}
+      </CardContent>
+    </Card>
+  );
+}
+
+export function InstrumentSection({
+  eyebrow,
+  readout,
+  action,
+  children,
+  className,
+  bodyClassName,
+}: InstrumentModuleProps) {
+  return (
+    <section className={cn("flex min-w-0 flex-col gap-3", className)}>
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <h2 className="font-medium text-foreground text-sm capitalize">
           {eyebrow}
         </h2>
-        <div className="flex min-w-0 items-center gap-2">
-          {readout && (
-            <span className="truncate font-mono text-[0.625rem] text-muted-foreground tabular-nums tracking-wide">
-              {readout}
-            </span>
-          )}
-          {action}
-        </div>
-      </header>
-      <div className={cn("min-w-0 flex-1 p-3", bodyClassName)}>{children}</div>
+        {(readout || action) && (
+          <div className="flex min-w-0 items-center gap-2">
+            {readout && (
+              <span className="truncate text-muted-foreground text-xs capitalize tabular-nums">
+                {readout}
+              </span>
+            )}
+            {action}
+          </div>
+        )}
+      </div>
+      <div className={cn("min-w-0 flex-1", bodyClassName)}>{children}</div>
     </section>
   );
 }
 
-export function InstrumentEmpty({
-  seed,
-  message,
-  className,
-}: InstrumentEmptyProps) {
+export function InstrumentEmpty({ message, className }: InstrumentEmptyProps) {
   return (
     <div
       className={cn(
-        "flex h-full min-h-32 flex-col items-center justify-center gap-3 text-center",
+        "flex h-full min-h-56 flex-col items-center justify-center gap-3 text-center",
         className
       )}
     >
-      <DitherAvatar animate className="size-10 opacity-70" name={seed} />
-      <p className="font-mono text-[0.6875rem] text-muted-foreground uppercase tracking-wider">
-        {message}
-      </p>
+      <p className="text-muted-foreground text-sm capitalize">{message}</p>
     </div>
   );
 }

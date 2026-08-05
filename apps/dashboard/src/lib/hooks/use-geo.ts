@@ -1,12 +1,18 @@
 "use client";
 
+import type { QueryClient } from "@tanstack/react-query";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type {
   AiTrafficResponse,
-  BeaconSetupResponse,
+  GeoCompetitorDeleteInput,
+  GeoCompetitorDetailResponse,
   GeoCompetitorShareResponse,
+  GeoCompetitorsResponse,
+  GeoCompetitorUpsertInput,
   GeoGenerateFromWebsiteInput,
+  GeoIngestSetupResponse,
+  GeoJourneyDetailResponse,
   GeoLanguageShareResponse,
   GeoModelUsageResponse,
   GeoOverviewResponse,
@@ -18,7 +24,15 @@ import type {
   GeoSettingsUpsertInput,
   GeoTimeseriesResponse,
   GeoTrackedPromptsResponse,
+  GeoTrafficJourneysResponse,
+  GeoTrafficLogFilters,
+  GeoTrafficLogResponse,
+  GeoTrafficPagesResponse,
 } from "@/types/geo";
+import {
+  toGeoTrafficLogPurposeFilter,
+  toGeoTrafficLogVisitorFilter,
+} from "@/utils/ai-traffic";
 import { dashboardOrpc } from "../orpc/query";
 
 const DEFAULT_GEO_DAYS = 30;
@@ -26,6 +40,24 @@ const DEFAULT_COMPETITOR_DAYS = 30;
 
 function toErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+async function invalidateCompetitorQueries(
+  queryClient: QueryClient,
+  organizationId: string
+) {
+  await Promise.all([
+    queryClient.invalidateQueries({
+      queryKey: dashboardOrpc.geo.competitors.queryKey({
+        input: { organizationId },
+      }),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: dashboardOrpc.geo.settings.queryKey({
+        input: { organizationId },
+      }),
+    }),
+  ]);
 }
 
 export function useGeoSettings(organizationId: string) {
@@ -42,11 +74,7 @@ export function useGeoSettingsUpsert(organizationId: string) {
     mutationFn: (input: GeoSettingsUpsertInput) =>
       dashboardOrpc.geo.settingsUpsert.call({ ...input, organizationId }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: dashboardOrpc.geo.settings.queryKey({
-          input: { organizationId },
-        }),
-      });
+      await invalidateCompetitorQueries(queryClient, organizationId);
       toast.success("AI visibility settings saved");
     },
     onError: (error) => {
@@ -92,6 +120,64 @@ export function useGeoCompetitorShare(organizationId: string, days?: number) {
     }),
     enabled: !!organizationId,
     meta: { errorMessage: "Failed to load competitor share" },
+  });
+}
+
+export function useGeoCompetitorDetail(
+  organizationId: string,
+  brand: string | null,
+  days?: number
+) {
+  return useQuery<GeoCompetitorDetailResponse>({
+    ...dashboardOrpc.geo.competitorDetail.queryOptions({
+      input: {
+        organizationId,
+        brand: brand ?? "",
+        days: days ?? DEFAULT_COMPETITOR_DAYS,
+      },
+    }),
+    enabled: !!organizationId && !!brand,
+    meta: { errorMessage: "Failed to load competitor detail" },
+  });
+}
+
+export function useGeoCompetitors(organizationId: string) {
+  return useQuery<GeoCompetitorsResponse>({
+    ...dashboardOrpc.geo.competitors.queryOptions({
+      input: { organizationId },
+    }),
+    enabled: !!organizationId,
+    meta: { errorMessage: "Failed to load competitors" },
+  });
+}
+
+export function useGeoCompetitorUpsert(organizationId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: GeoCompetitorUpsertInput) =>
+      dashboardOrpc.geo.competitorUpsert.call({ ...input, organizationId }),
+    onSuccess: async () => {
+      await invalidateCompetitorQueries(queryClient, organizationId);
+      toast.success("Competitor saved");
+    },
+    onError: (error) => {
+      toast.error(toErrorMessage(error, "Failed to save competitor"));
+    },
+  });
+}
+
+export function useGeoCompetitorDelete(organizationId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: GeoCompetitorDeleteInput) =>
+      dashboardOrpc.geo.competitorDelete.call({ ...input, organizationId }),
+    onSuccess: async () => {
+      await invalidateCompetitorQueries(queryClient, organizationId);
+      toast.success("Competitor removed");
+    },
+    onError: (error) => {
+      toast.error(toErrorMessage(error, "Failed to remove competitor"));
+    },
   });
 }
 
@@ -188,11 +274,7 @@ export function useGeoGenerateFromWebsite(organizationId: string) {
       dashboardOrpc.geo.generateFromWebsite.call({ ...input, organizationId }),
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: dashboardOrpc.geo.settings.queryKey({
-            input: { organizationId },
-          }),
-        }),
+        invalidateCompetitorQueries(queryClient, organizationId),
         queryClient.invalidateQueries({
           queryKey: dashboardOrpc.geo.promptsList.queryKey({
             input: { organizationId },
@@ -231,12 +313,67 @@ export function useAiTraffic(organizationId: string, days?: number) {
   });
 }
 
-export function useBeaconSetup(organizationId: string) {
-  return useQuery<BeaconSetupResponse>({
-    ...dashboardOrpc.geo.beaconSetup.queryOptions({
+export function useGeoTrafficLog(
+  organizationId: string,
+  filters: GeoTrafficLogFilters
+) {
+  return useQuery<GeoTrafficLogResponse>({
+    ...dashboardOrpc.geo.trafficLog.queryOptions({
+      input: {
+        organizationId,
+        visitorType: toGeoTrafficLogVisitorFilter(filters.visitorType),
+        category: toGeoTrafficLogPurposeFilter(filters.category),
+      },
+    }),
+    enabled: !!organizationId,
+    meta: { errorMessage: "Failed to load AI tracking log" },
+  });
+}
+
+export function useGeoTrafficPages(organizationId: string, days?: number) {
+  return useQuery<GeoTrafficPagesResponse>({
+    ...dashboardOrpc.geo.trafficPages.queryOptions({
+      input: { organizationId, days: days ?? DEFAULT_GEO_DAYS },
+    }),
+    enabled: !!organizationId,
+    meta: { errorMessage: "Failed to load top AI pages" },
+  });
+}
+
+export function useGeoTrafficJourneys(organizationId: string, days?: number) {
+  return useQuery<GeoTrafficJourneysResponse>({
+    ...dashboardOrpc.geo.trafficJourneys.queryOptions({
+      input: { organizationId, days: days ?? DEFAULT_GEO_DAYS },
+    }),
+    enabled: !!organizationId,
+    meta: { errorMessage: "Failed to load AI journeys" },
+  });
+}
+
+export function useGeoJourneyDetail(
+  organizationId: string,
+  journeyId: string | null,
+  days?: number
+) {
+  return useQuery<GeoJourneyDetailResponse>({
+    ...dashboardOrpc.geo.journeyDetail.queryOptions({
+      input: {
+        organizationId,
+        journeyId: journeyId ?? "",
+        days: days ?? DEFAULT_GEO_DAYS,
+      },
+    }),
+    enabled: !!organizationId && !!journeyId,
+    meta: { errorMessage: "Failed to load journey detail" },
+  });
+}
+
+export function useGeoIngestSetup(organizationId: string) {
+  return useQuery<GeoIngestSetupResponse>({
+    ...dashboardOrpc.geo.ingestSetup.queryOptions({
       input: { organizationId },
     }),
     enabled: !!organizationId,
-    meta: { errorMessage: "Failed to load beacon setup" },
+    meta: { errorMessage: "Failed to load tracking setup" },
   });
 }

@@ -8,7 +8,12 @@ import {
   p,
   t,
 } from "@tinybirdco/sdk";
-import { socialAccountStatsLatest, socialPostStatsLatest } from "./datasources";
+import {
+  geoTrafficDaily,
+  geoTrafficPagesDaily,
+  socialAccountStatsLatest,
+  socialPostStatsLatest,
+} from "./datasources";
 
 const POST_STATS_LATEST_SQL = `
   SELECT
@@ -59,6 +64,62 @@ export const socialAccountStatsLatestMv = defineMaterializedView(
     datasource: socialAccountStatsLatest,
     nodes: [
       node({ name: "account_stats_latest", sql: ACCOUNT_STATS_LATEST_SQL }),
+    ],
+  }
+);
+
+export const geoTrafficDailyMv = defineMaterializedView(
+  "geo_traffic_daily_mv",
+  {
+    description:
+      "Rolls geo_traffic_events into geo_traffic_daily on every ingest",
+    datasource: geoTrafficDaily,
+    nodes: [
+      node({
+        name: "traffic_daily",
+        sql: `
+        SELECT
+          toDate(captured_at) AS day,
+          organization_id,
+          visitor_type,
+          source,
+          countState() AS visits_state,
+          countIfState(toUInt8(wants_markdown)) AS markdown_visits_state,
+          uniqExactState(path) AS paths_state,
+          maxState(captured_at) AS last_seen_state,
+          anyState(agent) AS agent_state,
+          anyState(category) AS category_state,
+          anyState(confidence) AS confidence_state
+        FROM geo_traffic_events
+        GROUP BY day, organization_id, visitor_type, source
+      `,
+      }),
+    ],
+  }
+);
+
+export const geoTrafficPagesDailyMv = defineMaterializedView(
+  "geo_traffic_pages_daily_mv",
+  {
+    description:
+      "Rolls geo_traffic_events into geo_traffic_pages_daily on every ingest",
+    datasource: geoTrafficPagesDaily,
+    nodes: [
+      node({
+        name: "traffic_pages_daily",
+        sql: `
+          SELECT
+            toDate(captured_at) AS day,
+            organization_id,
+            visitor_type,
+            source,
+            path,
+            countState() AS visits_state,
+            maxState(captured_at) AS last_seen_state
+          FROM geo_traffic_events
+          GROUP BY day, organization_id, visitor_type, source, path
+        `,
+      }),
     ],
   }
 );
@@ -693,6 +754,90 @@ export const geoCompetitorShare = defineEndpoint("geo_competitor_share", {
   },
 });
 
+export const geoCompetitorTimeseries = defineEndpoint(
+  "geo_competitor_timeseries",
+  {
+    description: "Daily mentions of a single competitor brand",
+    params: {
+      organization_id: p.string().describe("Organization id"),
+      brand: p.string().describe("Competitor brand name"),
+      days: p.int32().optional(30).describe("Number of trailing days"),
+    },
+    nodes: [
+      node({
+        name: "competitor_daily",
+        sql: `
+        SELECT
+          toDate(captured_at) AS day,
+          countIf(has(competitors, {{String(brand)}})) AS mentions,
+          count() AS checks
+        FROM geo_mention_checks
+        WHERE organization_id = {{String(organization_id)}}
+          AND captured_at >= now() - toIntervalDay({{Int32(days, 30)}})
+        GROUP BY day
+        ORDER BY day ASC
+      `,
+      }),
+    ],
+    output: {
+      day: t.date(),
+      mentions: t.uint64(),
+      checks: t.uint64(),
+    },
+  }
+);
+
+export const geoCompetitorPrompts = defineEndpoint("geo_competitor_prompts", {
+  description:
+    "Latest result per prompt and engine where a competitor brand appears",
+  params: {
+    organization_id: p.string().describe("Organization id"),
+    brand: p.string().describe("Competitor brand name"),
+    days: p.int32().optional(30).describe("Number of trailing days"),
+  },
+  nodes: [
+    node({
+      name: "competitor_agg",
+      sql: `
+        SELECT
+          prompt_id,
+          engine,
+          argMax(prompt, captured_at) AS prompt,
+          argMax(mentioned, captured_at) AS mentioned,
+          argMax(position, captured_at) AS position,
+          max(captured_at) AS last_captured_at
+        FROM geo_mention_checks
+        WHERE organization_id = {{String(organization_id)}}
+          AND captured_at >= now() - toIntervalDay({{Int32(days, 30)}})
+          AND has(competitors, {{String(brand)}})
+        GROUP BY prompt_id, engine
+      `,
+    }),
+    node({
+      name: "competitor_latest",
+      sql: `
+        SELECT
+          prompt_id,
+          engine,
+          prompt,
+          mentioned,
+          position,
+          last_captured_at AS captured_at
+        FROM competitor_agg
+        ORDER BY captured_at DESC
+      `,
+    }),
+  ],
+  output: {
+    prompt_id: t.string(),
+    engine: t.string(),
+    prompt: t.string(),
+    mentioned: t.bool(),
+    position: t.uint64().nullable(),
+    captured_at: t.dateTime(),
+  },
+});
+
 export const geoLanguageShare = defineEndpoint("geo_language_share", {
   description:
     "Mention rate per answer language over the trailing window; legacy rows without a language count as English",
@@ -825,6 +970,12 @@ export type GeoOverviewRow = InferOutputRow<typeof geoOverview>;
 export type GeoTimeseriesRow = InferOutputRow<typeof geoTimeseries>;
 export type GeoPromptResultsRow = InferOutputRow<typeof geoPromptResults>;
 export type GeoCompetitorShareRow = InferOutputRow<typeof geoCompetitorShare>;
+export type GeoCompetitorTimeseriesRow = InferOutputRow<
+  typeof geoCompetitorTimeseries
+>;
+export type GeoCompetitorPromptsRow = InferOutputRow<
+  typeof geoCompetitorPrompts
+>;
 export type GeoLanguageShareRow = InferOutputRow<typeof geoLanguageShare>;
 
 export const postMetricsLookup = defineEndpoint("post_metrics_lookup", {
@@ -994,6 +1145,286 @@ export const aiTrafficLog = defineEndpoint("ai_traffic_log", {
   },
 });
 
+export const geoTrafficOverview = defineEndpoint("geo_traffic_overview", {
+  description:
+    "Captured site visits grouped by traffic source and visitor type over the trailing window",
+  params: {
+    organization_id: p.string().describe("Organization id"),
+    days: p.int32().optional(30).describe("Number of trailing days"),
+  },
+  nodes: [
+    node({
+      name: "per_source",
+      sql: `
+        SELECT
+          source,
+          visitor_type,
+          anyMerge(agent_state) AS agent,
+          anyMerge(category_state) AS category,
+          anyMerge(confidence_state) AS confidence,
+          countMerge(visits_state) AS visits,
+          countIfMerge(markdown_visits_state) AS markdown_visits,
+          uniqExactMerge(paths_state) AS paths,
+          maxMerge(last_seen_state) AS last_seen_at
+        FROM geo_traffic_daily
+        WHERE organization_id = {{String(organization_id)}}
+          AND day >= toDate(now() - toIntervalDay({{Int32(days, 30)}}))
+        GROUP BY source, visitor_type
+        ORDER BY visits DESC, source ASC
+      `,
+    }),
+  ],
+  output: {
+    source: t.string(),
+    visitor_type: t.string(),
+    agent: t.string(),
+    category: t.string(),
+    confidence: t.string(),
+    visits: t.uint64(),
+    markdown_visits: t.uint64(),
+    paths: t.uint64(),
+    last_seen_at: t.dateTime(),
+  },
+});
+
+export const geoTrafficTimeseries = defineEndpoint("geo_traffic_timeseries", {
+  description: "Daily captured visits per visitor type",
+  params: {
+    organization_id: p.string().describe("Organization id"),
+    days: p.int32().optional(30).describe("Number of trailing days"),
+  },
+  nodes: [
+    node({
+      name: "daily",
+      sql: `
+        SELECT
+          day,
+          visitor_type,
+          countMerge(visits_state) AS visits
+        FROM geo_traffic_daily
+        WHERE organization_id = {{String(organization_id)}}
+          AND day >= toDate(now() - toIntervalDay({{Int32(days, 30)}}))
+        GROUP BY day, visitor_type
+        ORDER BY day ASC, visitor_type ASC
+      `,
+    }),
+  ],
+  output: {
+    day: t.date(),
+    visitor_type: t.string(),
+    visits: t.uint64(),
+  },
+});
+
+export const geoTrafficPages = defineEndpoint("geo_traffic_pages", {
+  description:
+    "Top pages by AI traffic source, optionally narrowed to one visitor type",
+  params: {
+    organization_id: p.string().describe("Organization id"),
+    days: p.int32().optional(30).describe("Number of trailing days"),
+    visitor: p
+      .string()
+      .optional("")
+      .describe("Visitor type filter, empty for every AI visitor"),
+    limit: p.int32().optional(20).describe("Max rows"),
+  },
+  nodes: [
+    node({
+      name: "top_pages",
+      sql: `
+        SELECT
+          path,
+          source,
+          visitor_type,
+          countMerge(visits_state) AS visits,
+          maxMerge(last_seen_state) AS last_seen_at
+        FROM geo_traffic_pages_daily
+        WHERE organization_id = {{String(organization_id)}}
+          AND day >= toDate(now() - toIntervalDay({{Int32(days, 30)}}))
+          AND visitor_type IN ('crawler', 'ai_referral')
+          AND ({{String(visitor, '')}} = '' OR visitor_type = {{String(visitor, '')}})
+        GROUP BY path, source, visitor_type
+        ORDER BY visits DESC, path ASC
+        LIMIT {{Int32(limit, 20)}}
+      `,
+    }),
+  ],
+  output: {
+    path: t.string(),
+    source: t.string(),
+    visitor_type: t.string(),
+    visits: t.uint64(),
+    last_seen_at: t.dateTime(),
+  },
+});
+
+export const geoTrafficLog = defineEndpoint("geo_traffic_log", {
+  description: "Most recent captured AI visits, newest first",
+  params: {
+    organization_id: p.string().describe("Organization id"),
+    limit: p.int32().optional(50).describe("Max events"),
+    visitor_type: p
+      .string()
+      .optional("")
+      .describe("Visitor type filter, empty for every AI visitor"),
+    category: p
+      .string()
+      .optional("")
+      .describe("Request purpose filter, empty for every purpose"),
+  },
+  nodes: [
+    node({
+      name: "recent",
+      sql: `
+        SELECT
+          captured_at,
+          visitor_type,
+          source,
+          agent,
+          category,
+          confidence,
+          path,
+          host,
+          country,
+          journey_id,
+          wants_markdown,
+          substring(ua, 1, 180) AS ua_snippet
+        FROM geo_traffic_events
+        WHERE organization_id = {{String(organization_id)}}
+          AND (
+            ({{String(visitor_type, '')}} = '' AND visitor_type IN ('crawler', 'ai_referral'))
+            OR visitor_type = {{String(visitor_type, '')}}
+          )
+          AND ({{String(category, '')}} = '' OR category = {{String(category, '')}})
+        ORDER BY captured_at DESC
+        LIMIT {{Int32(limit, 50)}}
+      `,
+    }),
+  ],
+  output: {
+    captured_at: t.dateTime(),
+    visitor_type: t.string(),
+    source: t.string(),
+    agent: t.string(),
+    category: t.string(),
+    confidence: t.string(),
+    path: t.string(),
+    host: t.string(),
+    country: t.string(),
+    journey_id: t.string(),
+    wants_markdown: t.bool(),
+    ua_snippet: t.string(),
+  },
+});
+
+export const geoTrafficJourneys = defineEndpoint("geo_traffic_journeys", {
+  description:
+    "AI agent journeys, one row per journey id, newest activity first",
+  params: {
+    organization_id: p.string().describe("Organization id"),
+    days: p.int32().optional(30).describe("Number of trailing days"),
+    limit: p.int32().optional(25).describe("Max journeys"),
+  },
+  nodes: [
+    node({
+      name: "journey_events",
+      sql: `
+        SELECT
+          journey_id,
+          source,
+          visitor_type,
+          path,
+          captured_at
+        FROM geo_traffic_events
+        WHERE organization_id = {{String(organization_id)}}
+          AND captured_at >= now() - toIntervalDay({{Int32(days, 30)}})
+          AND visitor_type IN ('crawler', 'ai_referral')
+          AND journey_id != ''
+      `,
+    }),
+    node({
+      name: "journey_rollup",
+      sql: `
+        SELECT
+          journey_id,
+          any(source) AS source,
+          any(visitor_type) AS visitor_type,
+          count() AS pages,
+          uniqExact(path) AS distinct_paths,
+          min(captured_at) AS first_seen_at,
+          max(captured_at) AS last_seen_at,
+          arraySlice(groupUniqArray(path), 1, 5) AS sample_paths
+        FROM journey_events
+        GROUP BY journey_id
+        ORDER BY last_seen_at DESC, journey_id ASC
+        LIMIT {{Int32(limit, 25)}}
+      `,
+    }),
+  ],
+  output: {
+    journey_id: t.string(),
+    source: t.string(),
+    visitor_type: t.string(),
+    pages: t.uint64(),
+    distinct_paths: t.uint64(),
+    first_seen_at: t.dateTime(),
+    last_seen_at: t.dateTime(),
+    sample_paths: t.array(t.string()),
+  },
+});
+
+export const geoJourneyDetail = defineEndpoint("geo_journey_detail", {
+  description: "Every captured event for a single journey, oldest first",
+  params: {
+    organization_id: p.string().describe("Organization id"),
+    journey_id: p.string().describe("Journey id"),
+    days: p.int32().optional(30).describe("Number of trailing days"),
+    limit: p.int32().optional(200).describe("Max events"),
+  },
+  nodes: [
+    node({
+      name: "journey_detail_events",
+      sql: `
+        SELECT
+          captured_at,
+          path,
+          host,
+          method,
+          referer,
+          country,
+          agent,
+          category
+        FROM geo_traffic_events
+        WHERE organization_id = {{String(organization_id)}}
+          AND journey_id = {{String(journey_id)}}
+          AND captured_at >= now() - toIntervalDay({{Int32(days, 30)}})
+        ORDER BY captured_at ASC
+        LIMIT {{Int32(limit, 200)}}
+      `,
+    }),
+  ],
+  output: {
+    captured_at: t.dateTime(),
+    path: t.string(),
+    host: t.string(),
+    method: t.string(),
+    referer: t.string(),
+    country: t.string(),
+    agent: t.string(),
+    category: t.string(),
+  },
+});
+
 export type AiTrafficOverviewRow = InferOutputRow<typeof aiTrafficOverview>;
 export type AiTrafficTimeseriesRow = InferOutputRow<typeof aiTrafficTimeseries>;
 export type AiTrafficLogRow = InferOutputRow<typeof aiTrafficLog>;
+export type GeoTrafficOverviewRow = InferOutputRow<typeof geoTrafficOverview>;
+export type GeoTrafficTimeseriesRow = InferOutputRow<
+  typeof geoTrafficTimeseries
+>;
+export type GeoTrafficPagesRow = InferOutputRow<typeof geoTrafficPages>;
+export type GeoTrafficLogRow = InferOutputRow<typeof geoTrafficLog>;
+export type GeoTrafficLogParams = InferParams<typeof geoTrafficLog>;
+export type GeoTrafficPagesParams = InferParams<typeof geoTrafficPages>;
+export type GeoTrafficJourneysRow = InferOutputRow<typeof geoTrafficJourneys>;
+export type GeoJourneyDetailRow = InferOutputRow<typeof geoJourneyDetail>;

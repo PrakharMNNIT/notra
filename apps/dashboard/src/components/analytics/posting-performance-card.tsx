@@ -1,27 +1,23 @@
 "use client";
 
-import { Bar } from "@notra/ui/components/dither-kit/bar";
-import { BarChart } from "@notra/ui/components/dither-kit/bar-chart";
-import type { ChartConfig } from "@notra/ui/components/dither-kit/chart-context";
-import { Grid } from "@notra/ui/components/dither-kit/grid";
-import { Tooltip } from "@notra/ui/components/dither-kit/tooltip";
-import { XAxis } from "@notra/ui/components/dither-kit/x-axis";
-import { YAxis } from "@notra/ui/components/dither-kit/y-axis";
 import { useState } from "react";
 import { ChartSeriesLegend } from "@/components/analytics/chart-legend";
+import { EChartsBarChart } from "@/components/evilcharts/charts/echarts-bar-chart";
+import type { ChartConfig } from "@/components/evilcharts/ui/echarts-chart";
 import {
   InstrumentEmpty,
   InstrumentModule,
 } from "@/components/instrument/instrument-module";
-import type { PostingPerformanceChartRow } from "@/types/analytics";
-
-interface PostingPerformanceCardProps {
-  rows: PostingPerformanceChartRow[];
-}
+import { CHART_MUTED_COLOR, CHART_SECONDARY_COLOR } from "@/constants/charts";
+import type { PostingPerformanceCardProps } from "@/types/analytics";
+import { seriesColors } from "@/utils/chart-colors";
 
 const chartConfig: ChartConfig = {
-  avgEngagement: { label: "Avg engagement", color: "green" },
-  posts: { label: "Posts", color: "grey" },
+  avgEngagement: {
+    label: "Avg engagement",
+    colors: seriesColors(CHART_SECONDARY_COLOR),
+  },
+  posts: { label: "Posts", colors: seriesColors(CHART_MUTED_COLOR) },
 };
 
 const seriesKeys = Object.keys(chartConfig);
@@ -46,15 +42,20 @@ export function PostingPerformanceCard({ rows }: PostingPerformanceCardProps) {
   return (
     <InstrumentModule eyebrow="Best days to post" readout="90D">
       {hasData && visibleKeys.length > 0 ? (
-        <BarChart className="h-56 w-full" config={chartConfig} data={rows}>
-          <Grid />
-          <XAxis dataKey="day" />
-          <YAxis />
+        <EChartsBarChart
+          className="h-56 w-full"
+          config={chartConfig}
+          data={rows}
+          xDataKey="day"
+        >
+          <EChartsBarChart.Grid />
+          <EChartsBarChart.XAxis dataKey="day" />
+          <EChartsBarChart.YAxis />
           {visibleKeys.map((key) => (
-            <Bar dataKey={key} key={key} />
+            <EChartsBarChart.Bar dataKey={key} key={key} />
           ))}
-          <Tooltip labelKey="day" />
-        </BarChart>
+          <EChartsBarChart.Tooltip />
+        </EChartsBarChart>
       ) : (
         <InstrumentEmpty
           className="h-56"

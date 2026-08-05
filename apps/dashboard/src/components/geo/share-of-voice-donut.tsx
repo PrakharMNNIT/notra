@@ -1,60 +1,59 @@
 "use client";
 
-import type { ChartConfig } from "@notra/ui/components/dither-kit/chart-context";
-import { PALETTE, rgb } from "@notra/ui/components/dither-kit/palette";
-import { Pie } from "@notra/ui/components/dither-kit/pie";
-import { PieChart } from "@notra/ui/components/dither-kit/pie-chart";
-import { Tooltip } from "@notra/ui/components/dither-kit/tooltip";
-import type { ReactNode } from "react";
 import { useMemo } from "react";
+import { ChartColorScope } from "@/components/charts/chart-color-scope";
+import { EChartsPieChart } from "@/components/evilcharts/charts/echarts-pie-chart";
+import type { ChartConfig } from "@/components/evilcharts/ui/echarts-chart";
+import { CompetitorLogo } from "@/components/geo/competitor-logo";
 import {
   InstrumentEmpty,
   InstrumentModule,
 } from "@/components/instrument/instrument-module";
-import { ACCOUNT_SERIES_COLORS } from "@/constants/analytics";
-import type { GeoCompetitorSharePoint } from "@/types/geo";
-
-interface ShareOfVoiceDonutProps {
-  points: GeoCompetitorSharePoint[];
-  action?: ReactNode;
-}
-
-interface SliceRow {
-  brand: string;
-  mentions: number;
-}
+import {
+  CHART_OTHER_SLICE_LABEL,
+  DONUT_INNER_RADIUS,
+  DONUT_OUTER_RADIUS,
+} from "@/constants/charts";
+import { findCompetitorDomain } from "@/lib/geo/domain";
+import type { ShareOfVoiceDonutProps, ShareOfVoiceSlice } from "@/types/geo";
+import { donutSliceColors } from "@/utils/chart-colors";
+import { chartKey } from "@/utils/chart-keys";
 
 const TOP_SLICES = 5;
 const PERCENT = 100;
-const DONUT_INNER_RADIUS = 0.55;
 
-export function ShareOfVoiceDonut({ points, action }: ShareOfVoiceDonutProps) {
+export function ShareOfVoiceDonut({
+  points,
+  competitors,
+  action,
+}: ShareOfVoiceDonutProps) {
   const { rows, config, total, caption } = useMemo(() => {
     const top = points.slice(0, TOP_SLICES);
     const rest = points.slice(TOP_SLICES);
-    const sliceRows: SliceRow[] = top.map((point) => ({
+    const brands = top.map((point) => ({
       brand: point.brand,
       mentions: point.mentions,
     }));
     const otherTotal = rest.reduce((sum, point) => sum + point.mentions, 0);
     if (otherTotal > 0) {
-      sliceRows.push({ brand: "Other", mentions: otherTotal });
+      brands.push({ brand: CHART_OTHER_SLICE_LABEL, mentions: otherTotal });
     }
+    const sliceRows: ShareOfVoiceSlice[] = brands.map((row, index) => ({
+      ...row,
+      slice: chartKey(`${row.brand}-${index}`),
+    }));
     const sliceConfig: ChartConfig = {};
-    sliceRows.forEach((row, index) => {
-      sliceConfig[row.brand] = {
+    for (const [index, row] of sliceRows.entries()) {
+      sliceConfig[row.slice] = {
         label: row.brand,
-        color:
-          row.brand === "Other"
-            ? "grey"
-            : (ACCOUNT_SERIES_COLORS[index % ACCOUNT_SERIES_COLORS.length] ??
-              "blue"),
+        colors: donutSliceColors(index, row.brand),
       };
-    });
+    }
     const sliceTotal = sliceRows.reduce((sum, row) => sum + row.mentions, 0);
-    const topSlice = sliceRows.reduce<SliceRow | null>(
+    const topSlice = sliceRows.reduce<ShareOfVoiceSlice | null>(
       (best, row) =>
-        row.brand !== "Other" && (best === null || row.mentions > best.mentions)
+        row.brand !== CHART_OTHER_SLICE_LABEL &&
+        (best === null || row.mentions > best.mentions)
           ? row
           : best,
       null
@@ -81,31 +80,39 @@ export function ShareOfVoiceDonut({ points, action }: ShareOfVoiceDonutProps) {
       ) : (
         <div className="flex h-full flex-col">
           <div className="flex flex-1 items-center gap-4">
-            <PieChart
+            <EChartsPieChart
               className="h-56 w-1/2 min-w-0"
               config={config}
               data={rows}
               dataKey="mentions"
-              innerRadius={DONUT_INNER_RADIUS}
-              nameKey="brand"
+              nameKey="slice"
             >
-              <Pie />
-              <Tooltip inlineHeading />
-            </PieChart>
-            <div className="min-w-0 flex-1 space-y-1.5">
+              <EChartsPieChart.Pie
+                innerRadius={DONUT_INNER_RADIUS}
+                outerRadius={DONUT_OUTER_RADIUS}
+              />
+              <EChartsPieChart.Tooltip />
+            </EChartsPieChart>
+            <ChartColorScope
+              className="min-w-0 flex-1 space-y-1.5"
+              config={config}
+            >
               {rows.map((row) => (
                 <div
-                  className="flex items-center gap-1.5 font-mono text-xs"
-                  key={row.brand}
+                  className="flex items-center gap-1.5 text-xs"
+                  key={row.slice}
                 >
                   <span
                     className="size-2 shrink-0 rounded-[0.0625rem]"
-                    style={{
-                      backgroundColor: rgb(
-                        PALETTE[config[row.brand]?.color ?? "grey"].fill
-                      ),
-                    }}
+                    style={{ backgroundColor: `var(--color-${row.slice}-0)` }}
                   />
+                  {row.brand !== CHART_OTHER_SLICE_LABEL && (
+                    <CompetitorLogo
+                      className="size-3.5"
+                      domain={findCompetitorDomain(competitors, row.brand)}
+                      name={row.brand}
+                    />
+                  )}
                   <span className="min-w-0 flex-1 truncate text-muted-foreground">
                     {row.brand}
                   </span>
@@ -116,7 +123,7 @@ export function ShareOfVoiceDonut({ points, action }: ShareOfVoiceDonutProps) {
                   </span>
                 </div>
               ))}
-            </div>
+            </ChartColorScope>
           </div>
           {caption && (
             <p className="mt-2 truncate text-[0.6875rem] text-muted-foreground">

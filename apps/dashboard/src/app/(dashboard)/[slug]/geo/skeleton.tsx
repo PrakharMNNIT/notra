@@ -5,7 +5,8 @@ import { useId } from "react";
 import { PageContainer } from "@/components/layout/container";
 
 const RAIL_TILE_COUNT = 4;
-const MODULE_COUNT = 3;
+const TAB_COUNT = 4;
+const TABLE_BLOCK_COUNT = 2;
 
 export function GeoPageSkeleton() {
   const id = useId();
@@ -16,23 +17,28 @@ export function GeoPageSkeleton() {
           <Skeleton className="h-7 w-32" />
           <Skeleton className="h-3.5 w-72" />
         </div>
-        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {Array.from({ length: RAIL_TILE_COUNT }).map((_, index) => (
             <Skeleton
-              className="h-20 w-full rounded-none"
+              className="h-28 w-full rounded-xl"
               key={`${id}-rail-${index}`}
             />
           ))}
         </div>
-        <div className="grid grid-cols-1 gap-px overflow-hidden rounded-md border lg:grid-cols-3">
-          {Array.from({ length: MODULE_COUNT }).map((_, index) => (
+        <div className="flex items-center gap-4 border-border border-b pb-2">
+          {Array.from({ length: TAB_COUNT }).map((_, index) => (
+            <Skeleton className="h-4 w-20" key={`${id}-tab-${index}`} />
+          ))}
+        </div>
+        <div className="flex flex-col gap-6 pt-2">
+          <Skeleton className="h-72 w-full rounded-xl" />
+          {Array.from({ length: TABLE_BLOCK_COUNT }).map((_, index) => (
             <Skeleton
-              className="h-80 w-full rounded-none"
-              key={`${id}-module-${index}`}
+              className="h-56 w-full rounded-xl"
+              key={`${id}-block-${index}`}
             />
           ))}
         </div>
-        <Skeleton className="h-64 w-full rounded-md" />
       </div>
     </PageContainer>
   );

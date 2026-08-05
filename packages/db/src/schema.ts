@@ -1496,23 +1496,20 @@ export const geoPrompts = pgTable(
   (table) => [index("geoPrompts_organizationId_idx").on(table.organizationId)]
 );
 
-export const socialExperiments = pgTable(
-  "social_experiments",
+export const geoCompetitors = pgTable(
+  "geo_competitors",
   {
     id: text("id").primaryKey(),
     organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    hypothesis: text("hypothesis"),
-    provider: text("provider").notNull(),
-    variantAPostId: text("variant_a_post_id").notNull(),
-    variantBPostId: text("variant_b_post_id").notNull(),
-    metric: text("metric").notNull(),
-    status: text("status").notNull().default("running"),
-    winner: text("winner"),
-    startedAt: timestamp("started_at").defaultNow().notNull(),
-    endedAt: timestamp("ended_at"),
+    domain: text("domain"),
+    synonyms: text("synonyms").array().notNull().default(sql`ARRAY[]::text[]`),
+    kind: text("kind", { enum: ["direct", "indirect"] })
+      .notNull()
+      .default("direct"),
+    color: text("color"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -1520,7 +1517,11 @@ export const socialExperiments = pgTable(
       .notNull(),
   },
   (table) => [
-    index("socialExperiments_organizationId_idx").on(table.organizationId),
+    index("geoCompetitors_organizationId_idx").on(table.organizationId),
+    uniqueIndex("geoCompetitors_organizationId_name_uidx").on(
+      table.organizationId,
+      table.name
+    ),
   ]
 );
 
@@ -2160,6 +2161,7 @@ export const organizationsRelations = relations(
     notificationSettings: one(organizationNotificationSettings),
     geoSettings: one(geoSettings),
     geoPrompts: many(geoPrompts),
+    geoCompetitors: many(geoCompetitors),
     connectedSocialAccounts: many(connectedSocialAccounts),
     postCollections: many(postCollections),
     posts: many(posts),
@@ -2547,19 +2549,16 @@ export const geoSettingsRelations = relations(geoSettings, ({ one }) => ({
   }),
 }));
 
-export const socialExperimentsRelations = relations(
-  socialExperiments,
-  ({ one }) => ({
-    organization: one(organizations, {
-      fields: [socialExperiments.organizationId],
-      references: [organizations.id],
-    }),
-  })
-);
-
 export const geoPromptsRelations = relations(geoPrompts, ({ one }) => ({
   organization: one(organizations, {
     fields: [geoPrompts.organizationId],
+    references: [organizations.id],
+  }),
+}));
+
+export const geoCompetitorsRelations = relations(geoCompetitors, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [geoCompetitors.organizationId],
     references: [organizations.id],
   }),
 }));

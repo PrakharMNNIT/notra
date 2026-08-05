@@ -27,6 +27,7 @@ const nextConfig: NextConfig = {
     "@notra/content-generation",
     "@notra/kiwi",
     "@notra/utils",
+    "@usenotra/geo",
   ],
   serverExternalPackages: ["@resvg/resvg-js"],
   async rewrites() {
@@ -109,6 +110,10 @@ const nextConfig: NextConfig = {
       {
         protocol: "https",
         hostname: "icons.duckduckgo.com",
+      },
+      {
+        protocol: "https",
+        hostname: "logos.context.dev",
       },
       {
         protocol: "https",

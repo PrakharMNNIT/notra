@@ -20,9 +20,12 @@ import {
   GEO_PROMPT_MAX_LENGTH,
   GEO_PROMPT_MIN_LENGTH,
 } from "@/constants/geo";
+import { competitorKey, normalizeCompetitorDomain } from "@/lib/geo/domain";
 import { GeoDiscoveryError } from "@/lib/geo/errors";
+import { syncGeoCompetitors } from "@/lib/geo/programs";
 import { geoWebsiteDiscoverySchema } from "@/schemas/geo";
 import type {
+  GeoCompetitorSeed,
   GeoGenerateFromWebsiteResult,
   GeoWebsiteDiscovery,
 } from "@/types/geo";
@@ -42,7 +45,7 @@ Derive the brand tracking configuration for this company:
 
 1. companyName: the company or product name exactly as it brands itself.
 2. aliases: up to ${GEO_DISCOVERY_MAX_ALIASES} alternative spellings that identify this company - product names, the bare domain, and common misspellings. Never include generic words that could refer to anything else.
-3. competitors: between ${GEO_DISCOVERY_MIN_COMPETITORS} and ${GEO_DISCOVERY_MAX_COMPETITORS} real, named companies or products that compete in the same category.
+3. competitors: between ${GEO_DISCOVERY_MIN_COMPETITORS} and ${GEO_DISCOVERY_MAX_COMPETITORS} real, named companies or products that compete in the same category. For each one give its name and its bare website domain (for example "stripe.com"), or null for domain when you are not sure.
 4. prompts: between ${GEO_DISCOVERY_MIN_PROMPTS} and ${GEO_DISCOVERY_MAX_PROMPTS} questions a real buyer would type into an AI assistant while researching this category. At most ${GEO_DISCOVERY_MAX_BRANDED_PROMPTS} of them may contain the company name; every other question must be unbranded and framed around the category, the problem or the buying decision, so the answer reveals whether an assistant recommends this company unprompted. Each question must be between ${MIN_PROMPT_LENGTH} and ${MAX_PROMPT_LENGTH} characters.`;
 }
 
@@ -67,6 +70,23 @@ function unionValues(
     merged.push(trimmed);
   }
   return merged;
+}
+
+function buildCompetitorSeeds(
+  names: string[],
+  discovered: readonly GeoCompetitorSeed[]
+): GeoCompetitorSeed[] {
+  const domains = new Map<string, string | null>();
+  for (const entry of discovered) {
+    const domain = entry.domain
+      ? normalizeCompetitorDomain(entry.domain)
+      : null;
+    domains.set(competitorKey(entry.name), domain);
+  }
+  return names.map((name) => ({
+    name,
+    domain: domains.get(competitorKey(name)) ?? null,
+  }));
 }
 
 const scrapeWebsite = Effect.fn("geo.discover.scrape")(function* (url: string) {
@@ -131,7 +151,7 @@ export const generateGeoFromWebsite = Effect.fn("geo.generateFromWebsite")(
     );
     const competitors = unionValues(
       existing?.competitors ?? [],
-      discovery.competitors,
+      discovery.competitors.map((entry) => entry.name),
       GEO_DISCOVERY_COMPETITOR_LIMIT
     );
     const companyName = existing?.companyName ?? discovery.companyName;
@@ -158,6 +178,11 @@ export const generateGeoFromWebsite = Effect.fn("geo.generateFromWebsite")(
           cause,
         }),
     });
+
+    yield* syncGeoCompetitors(
+      organizationId,
+      buildCompetitorSeeds(competitors, discovery.competitors)
+    );
 
     const existingPrompts = yield* Effect.tryPromise({
       try: () =>

@@ -1,5 +1,10 @@
 import { LANGUAGE_FLAGS } from "@/constants/brand-identity";
-import type { GeoGroundedEngine } from "@/types/geo";
+import type {
+  GeoGroundedEngine,
+  GeoTab,
+  GeoTrafficLogPurposeOption,
+  GeoTrafficLogVisitorOption,
+} from "@/types/geo";
 
 export const GEO_ENGINES = [
   "openai/gpt-5.4",
@@ -128,13 +133,130 @@ export const GEO_ANSWER_SYSTEM_PROMPT =
 
 export const AI_TRAFFIC_DEFAULT_DAYS = 30;
 export const AI_TRAFFIC_DEFAULT_LOG_LIMIT = 50;
-export const BEACON_INGEST_PATH = "/api/beacon";
-export const BEACON_INGEST_SECRET_ENV = "BEACON_INGEST_SECRET";
+export const AI_TRAFFIC_DEFAULT_PAGES_LIMIT = 20;
+export const GEO_INGEST_PATH = "/api/geo/ingest";
+export const GEO_INGEST_SECRET_ENV = "GEO_INGEST_SECRET";
+export const GEO_INGEST_SECRET_FALLBACK_ENV = "BEACON_INGEST_SECRET";
+export const GEO_INGEST_TOKEN_SEPARATOR = ".";
+export const GEO_INGEST_BEARER_PREFIX = "Bearer ";
+export const GEO_MAX_STORED_UA_LENGTH = 512;
+export const GEO_MARKDOWN_ACCEPT_MATCHERS: readonly string[] = [
+  "text/markdown",
+  "text/x-markdown",
+];
+export const AI_TRAFFIC_DEFAULT_JOURNEYS_LIMIT = 25;
+
+export const OWN_BRAND_ROW_ID = "own-brand";
+
+export const COMPETITOR_KIND_HINT =
+  "Direct sells what you sell. Indirect solves the same problem differently.";
+
+export const COMPETITOR_TYPE_FILTER_VALUES = [
+  "all",
+  "direct",
+  "indirect",
+] as const;
+
+export const COMPETITOR_TYPE_FILTERS = [
+  { value: "all", label: "All types" },
+  { value: "direct", label: "Direct" },
+  { value: "indirect", label: "Indirect" },
+] as const;
+
+export const COMPETITORS_TABLE_HEIGHT = 420;
+export const COMPETITOR_PROMPTS_TABLE_HEIGHT = 288;
+export const COMPETITOR_PROMPTS_PAGE_TABLE_HEIGHT = 620;
+export const COMPETITORS_TABLE_ROW_HEIGHT = 52;
+
+export const GEO_JOURNEY_DEPTH_THRESHOLDS = [1, 2, 3, 5, 10] as const;
+
+export const GEO_JOURNEY_PARAM = "ntr";
+export const GEO_JOURNEY_EXPLICIT_PREFIX = "n_";
+export const GEO_JOURNEY_FINGERPRINT_PREFIX = "f_";
+export const GEO_JOURNEY_BUCKET_SECONDS = 1800;
+export const GEO_JOURNEY_BROWSE_BUCKET_SECONDS = 600;
+export const GEO_JOURNEY_BROWSE_CATEGORY = "assistant-browse";
+export const GEO_JOURNEY_HASH_LENGTH = 16;
+export const GEO_JOURNEY_IPV4_OCTETS = 3;
+export const GEO_JOURNEY_IPV6_GROUPS = 4;
+export const GEO_JOURNEY_CHIP_LENGTH = 6;
+export const GEO_JOURNEY_DETAIL_LIMIT = 200;
+export const GEO_JOURNEY_DETAIL_MIN_EVENTS = 2;
+export const GEO_JOURNEY_DETAIL_SERIES_KEY = "pages";
+
+export const GEO_AI_REFERRER_HOSTS: Record<string, string> = {
+  "chatgpt.com": "chatgpt",
+  "chat.openai.com": "chatgpt",
+  "perplexity.ai": "perplexity",
+  "www.perplexity.ai": "perplexity",
+  "gemini.google.com": "gemini",
+  "bard.google.com": "gemini",
+  "claude.ai": "claude",
+  "copilot.microsoft.com": "copilot",
+  "www.bing.com/chat": "copilot",
+  "you.com": "you",
+  "chat.deepseek.com": "deepseek",
+  "chat.mistral.ai": "mistral",
+  "grok.com": "grok",
+  "x.ai": "grok",
+  "chat.qwen.ai": "qwen",
+};
+
+export const GEO_AI_REFERRER_LABELS: Record<string, string> = {
+  chatgpt: "ChatGPT",
+  perplexity: "Perplexity",
+  gemini: "Gemini",
+  claude: "Claude",
+  copilot: "Copilot",
+  you: "You.com",
+  deepseek: "DeepSeek",
+  mistral: "Mistral",
+  grok: "Grok",
+  qwen: "Qwen",
+};
+
+export const GEO_NON_AI_BOT_PATTERNS: readonly string[] = [
+  "googlebot",
+  "bingbot",
+  "duckduckbot",
+  "yandexbot",
+  "baiduspider",
+  "slurp",
+  "ahrefsbot",
+  "semrushbot",
+  "facebookexternalhit",
+  "twitterbot",
+  "linkedinbot",
+  "slackbot",
+  "discordbot",
+  "telegrambot",
+  "whatsapp",
+  "uptimerobot",
+  "pingdom",
+];
+
+export const GEO_BROWSER_UA_PATTERNS: readonly string[] = [
+  "mozilla/",
+  "applewebkit",
+  "chrome/",
+  "safari/",
+  "firefox/",
+  "edg/",
+  "opera",
+];
+
+export const GEO_VISITOR_TYPE_LABELS: Record<string, string> = {
+  crawler: "AI crawler",
+  ai_referral: "AI referral",
+  human: "Human",
+  unknown: "Unknown",
+};
 
 export const AI_TRAFFIC_PURPOSE_LABELS: Record<string, string> = {
   "training-crawler": "Training data",
   "search-index": "Search index",
   "assistant-browse": "Used in answer",
+  "assistant-referral": "Referral",
 };
 
 export const AI_TRAFFIC_PURPOSE_DESCRIPTIONS: Record<string, string> = {
@@ -142,6 +264,31 @@ export const AI_TRAFFIC_PURPOSE_DESCRIPTIONS: Record<string, string> = {
   "search-index": "Builds the index an AI answer engine searches",
   "assistant-browse":
     "Fetched while an assistant was answering someone. A fetch is not proof of a citation",
+  "assistant-referral":
+    "A person clicked through to your site from an AI answer",
+};
+
+export const GEO_TRAFFIC_LOG_FILTER_ALL = "all";
+
+export const GEO_TRAFFIC_LOG_VISITOR_OPTIONS: readonly GeoTrafficLogVisitorOption[] =
+  [
+    { value: GEO_TRAFFIC_LOG_FILTER_ALL, label: "All visitors" },
+    { value: "crawler", label: "AI crawler" },
+    { value: "ai_referral", label: "AI referral" },
+    { value: "human", label: "Human" },
+  ];
+
+export const GEO_TRAFFIC_LOG_PURPOSE_OPTIONS: readonly GeoTrafficLogPurposeOption[] =
+  [
+    { value: GEO_TRAFFIC_LOG_FILTER_ALL, label: "All purposes" },
+    { value: "training-crawler", label: "Training data" },
+    { value: "search-index", label: "Search index" },
+    { value: "assistant-browse", label: "Used in answer" },
+  ];
+
+export const GEO_JOURNEY_KIND_LABELS: Record<string, string> = {
+  tagged: "Tagged journey, followed a tagged link",
+  fingerprint: "Fingerprinted journey, matched by heuristic",
 };
 
 export const AI_TRAFFIC_CONFIDENCE_LABELS: Record<string, string> = {
@@ -170,3 +317,24 @@ export const GEO_LANGUAGE_GROUNDED_MAX_PROMPTS = 3;
 export const GEO_TRANSLATION_MAX_TOKENS = 2000;
 
 export const GEO_LANGUAGE_FLAGS: Record<string, string> = LANGUAGE_FLAGS;
+
+export const COPY_FEEDBACK_MS = 2000;
+
+export const GEO_TAB_VALUES = [
+  "visibility",
+  "prompts",
+  "traffic",
+  "journeys",
+] as const satisfies readonly GeoTab[];
+
+export const GEO_DEFAULT_TAB: GeoTab = "visibility";
+
+export const GEO_PROMPTS_TAB_LIMIT = 12;
+
+export const GEO_LOGO_LINK_BASE = "https://logos.context.dev/";
+export const GEO_LOGO_LINK_CLIENT_ID_ENV = "NEXT_PUBLIC_LOGOLINK_CLIENT_ID";
+export const GEO_LOGO_SIZE_PX = 40;
+
+export const GEO_COMPETITOR_DETAIL_DAYS = 30;
+export const GEO_COMPETITOR_DETAIL_MIN_POINTS = 2;
+export const GEO_COMPETITOR_DETAIL_SERIES_KEY = "mentions";

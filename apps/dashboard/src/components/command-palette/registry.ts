@@ -13,7 +13,6 @@ import {
   Notification03Icon,
   PlugIcon,
   Settings01Icon,
-  TestTube01Icon,
   UserCircleIcon,
   UserGroupIcon,
   Wallet01Icon,
@@ -108,14 +107,6 @@ export const COMMAND_ROUTES: CommandRoute[] = [
     icon: Calendar03Icon,
     section: "Automation",
     path: (slug) => `/${slug}/automation/schedules`,
-  },
-  {
-    id: "experiments",
-    label: "A/B Tests",
-    keywords: ["experiments", "ab test", "variants", "testing"],
-    icon: TestTube01Icon,
-    section: "Automation",
-    path: (slug) => `/${slug}/experiments`,
   },
   {
     id: "automation-events",

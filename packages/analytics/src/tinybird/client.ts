@@ -5,7 +5,9 @@ import {
   type AiTrafficEventRow,
   aiTrafficEvents,
   type GeoMentionCheckRow,
+  type GeoTrafficEventRow,
   geoMentionChecks,
+  geoTrafficEvents,
   type ModelUsageShareRow,
   modelUsageShare,
   type SocialAccountRow,
@@ -35,16 +37,34 @@ import {
   type FollowerGrowthParams,
   type FollowerGrowthRow,
   followerGrowth,
+  type GeoCompetitorPromptsRow,
   type GeoCompetitorShareRow,
+  type GeoCompetitorTimeseriesRow,
+  type GeoJourneyDetailRow,
   type GeoLanguageShareRow,
   type GeoOverviewRow,
   type GeoPromptResultsRow,
   type GeoTimeseriesRow,
+  type GeoTrafficJourneysRow,
+  type GeoTrafficLogParams,
+  type GeoTrafficLogRow,
+  type GeoTrafficOverviewRow,
+  type GeoTrafficPagesParams,
+  type GeoTrafficPagesRow,
+  type GeoTrafficTimeseriesRow,
+  geoCompetitorPrompts,
   geoCompetitorShare,
+  geoCompetitorTimeseries,
+  geoJourneyDetail,
   geoLanguageShare,
   geoOverview,
   geoPromptResults,
   geoTimeseries,
+  geoTrafficJourneys,
+  geoTrafficLog,
+  geoTrafficOverview,
+  geoTrafficPages,
+  geoTrafficTimeseries,
   type ModelUsageLatestParams,
   type ModelUsageLatestRow,
   type ModelUsageTrendParams,
@@ -84,6 +104,7 @@ function createTinybirdClient() {
       geoMentionChecks,
       modelUsageShare,
       aiTrafficEvents,
+      geoTrafficEvents,
     },
     pipes: {
       socialOverview,
@@ -97,6 +118,8 @@ function createTinybirdClient() {
       geoTimeseries,
       geoPromptResults,
       geoCompetitorShare,
+      geoCompetitorTimeseries,
+      geoCompetitorPrompts,
       geoLanguageShare,
       accountLeaderboard,
       modelUsageLatest,
@@ -104,6 +127,12 @@ function createTinybirdClient() {
       aiTrafficOverview,
       aiTrafficTimeseries,
       aiTrafficLog,
+      geoTrafficOverview,
+      geoTrafficTimeseries,
+      geoTrafficPages,
+      geoTrafficLog,
+      geoTrafficJourneys,
+      geoJourneyDetail,
     },
   });
 }
@@ -245,6 +274,17 @@ export function ingestAiTrafficEvents(
   );
 }
 
+export function ingestGeoTrafficEvents(
+  rows: GeoTrafficEventRow[]
+): Promise<IngestResult | null> {
+  return ingestRows(
+    rows,
+    "geo",
+    rows.map((row) => row.organization_id),
+    (client, batch) => client.geoTrafficEvents.ingestBatch(batch)
+  );
+}
+
 export function querySocialOverview(
   params: SocialOverviewParams
 ): Promise<QueryResult<SocialOverviewRow> | null> {
@@ -369,6 +409,34 @@ export function queryGeoCompetitorShare(params: {
   );
 }
 
+export function queryGeoCompetitorTimeseries(params: {
+  organization_id: string;
+  brand: string;
+  days?: number;
+}): Promise<QueryResult<GeoCompetitorTimeseriesRow> | null> {
+  return cachedPipeQuery(
+    "geo",
+    "geo_competitor_timeseries",
+    params,
+    params.organization_id,
+    (client) => client.geoCompetitorTimeseries.query(params)
+  );
+}
+
+export function queryGeoCompetitorPrompts(params: {
+  organization_id: string;
+  brand: string;
+  days?: number;
+}): Promise<QueryResult<GeoCompetitorPromptsRow> | null> {
+  return cachedPipeQuery(
+    "geo",
+    "geo_competitor_prompts",
+    params,
+    params.organization_id,
+    (client) => client.geoCompetitorPrompts.query(params)
+  );
+}
+
 export function queryGeoLanguageShare(params: {
   organization_id: string;
   days?: number;
@@ -470,5 +538,84 @@ export function queryAiTrafficLog(params: {
     params,
     params.organization_id,
     (client) => client.aiTrafficLog.query(params)
+  );
+}
+
+export function queryGeoTrafficOverview(params: {
+  organization_id: string;
+  days?: number;
+}): Promise<QueryResult<GeoTrafficOverviewRow> | null> {
+  return cachedPipeQuery(
+    "geo",
+    "geo_traffic_overview",
+    params,
+    params.organization_id,
+    (client) => client.geoTrafficOverview.query(params)
+  );
+}
+
+export function queryGeoTrafficTimeseries(params: {
+  organization_id: string;
+  days?: number;
+}): Promise<QueryResult<GeoTrafficTimeseriesRow> | null> {
+  return cachedPipeQuery(
+    "geo",
+    "geo_traffic_timeseries",
+    params,
+    params.organization_id,
+    (client) => client.geoTrafficTimeseries.query(params)
+  );
+}
+
+export function queryGeoTrafficPages(
+  params: GeoTrafficPagesParams
+): Promise<QueryResult<GeoTrafficPagesRow> | null> {
+  return cachedPipeQuery(
+    "geo",
+    "geo_traffic_pages",
+    params,
+    params.organization_id,
+    (client) => client.geoTrafficPages.query(params)
+  );
+}
+
+export function queryGeoTrafficLog(
+  params: GeoTrafficLogParams
+): Promise<QueryResult<GeoTrafficLogRow> | null> {
+  return cachedPipeQuery(
+    "geo",
+    "geo_traffic_log",
+    params,
+    params.organization_id,
+    (client) => client.geoTrafficLog.query(params)
+  );
+}
+
+export function queryGeoTrafficJourneys(params: {
+  organization_id: string;
+  days?: number;
+  limit?: number;
+}): Promise<QueryResult<GeoTrafficJourneysRow> | null> {
+  return cachedPipeQuery(
+    "geo",
+    "geo_traffic_journeys",
+    params,
+    params.organization_id,
+    (client) => client.geoTrafficJourneys.query(params)
+  );
+}
+
+export function queryGeoJourneyDetail(params: {
+  organization_id: string;
+  journey_id: string;
+  days?: number;
+  limit?: number;
+}): Promise<QueryResult<GeoJourneyDetailRow> | null> {
+  return cachedPipeQuery(
+    "geo",
+    "geo_journey_detail",
+    params,
+    params.organization_id,
+    (client) => client.geoJourneyDetail.query(params)
   );
 }

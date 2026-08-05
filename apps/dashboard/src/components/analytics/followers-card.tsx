@@ -1,12 +1,11 @@
 "use client";
 
-import type { DitherColor } from "@notra/ui/components/dither-kit/palette";
-import { Sparkline } from "@notra/ui/components/dither-kit/sparkline";
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
 } from "@notra/ui/components/ui/avatar";
+import { ChartSparkline } from "@/components/charts/chart-sparkline";
 import {
   InstrumentEmpty,
   InstrumentModule,
@@ -14,16 +13,9 @@ import {
 import { cn } from "@/lib/utils";
 import type {
   FollowerGrowthPoint,
-  SocialOverviewAccount,
+  FollowersCardProps,
 } from "@/types/analytics";
 import { accountSeriesKey, formatMetric } from "@/utils/analytics-charts";
-
-interface FollowersCardProps {
-  accounts: SocialOverviewAccount[];
-  points: FollowerGrowthPoint[];
-  hiddenKeys: ReadonlySet<string>;
-  colorForKey: (key: string) => DitherColor;
-}
 
 function seriesFor(
   points: FollowerGrowthPoint[],
@@ -85,7 +77,7 @@ export function FollowersCard({
   );
 
   return (
-    <InstrumentModule eyebrow="Followers" readout="since tracking began">
+    <InstrumentModule eyebrow="Followers">
       {visible.length === 0 ? (
         <InstrumentEmpty
           className="h-56"
@@ -130,7 +122,7 @@ export function FollowersCard({
                 </div>
                 <div className="ml-auto h-10 w-2/5 min-w-24">
                   {series.length >= 2 && (
-                    <Sparkline
+                    <ChartSparkline
                       className="h-full w-full"
                       color={colorForKey(key)}
                       data={series}

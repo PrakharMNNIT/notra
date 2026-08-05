@@ -1,3 +1,4 @@
+import { GEO_ENGINE_LABELS } from "@/constants/geo";
 import type {
   GeoEngineFamily,
   GeoHeroSummary,
@@ -6,6 +7,7 @@ import type {
   MentionRateRow,
 } from "@/types/geo";
 import { formatDayLabel } from "@/utils/analytics-charts";
+import { chartKey } from "@/utils/chart-keys";
 import { isGroundedEngine } from "@/utils/geo-presence";
 
 const PERCENT = 100;
@@ -50,7 +52,7 @@ export function buildMentionRateRows(points: GeoTimeseriesPoint[]): {
     const dayPoints = byDay.get(day);
     for (const engine of engines) {
       const point = dayPoints?.get(engine);
-      row[engine] =
+      row[chartKey(engine)] =
         point && point.checks > 0
           ? Math.round((point.mentions / point.checks) * PERCENT)
           : 0;
@@ -106,9 +108,19 @@ export function gapInsight(gapPoints: number | null): string {
 }
 
 const GROUNDED_SUFFIX_PATTERN = /(-direct)?-grounded$/;
+const WEB_LABEL_SUFFIX_PATTERN = /\s*\(web\)$/;
 
 export function engineFamilyOf(engine: string): string {
   return engine.replace(GROUNDED_SUFFIX_PATTERN, "");
+}
+
+export function engineFamilyLabel(family: string): string {
+  const label =
+    GEO_ENGINE_LABELS[family] ?? GEO_ENGINE_LABELS[`${family}-grounded`];
+  if (!label) {
+    return family;
+  }
+  return label.replace(WEB_LABEL_SUFFIX_PATTERN, "");
 }
 
 export function groupEngineFamilies(

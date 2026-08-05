@@ -1,4 +1,6 @@
-import type { ChartConfig } from "@notra/ui/components/dither-kit/chart-context";
+import type { ReactNode } from "react";
+import type { ChartConfig } from "@/components/evilcharts/ui/echarts-chart";
+import type { ChartColorPair, ChartMarker } from "@/types/charts";
 
 export interface SocialAnalyticsSyncPayload {
   organizationId?: string;
@@ -193,6 +195,7 @@ export interface PostingPerformanceChartRow {
   day: string;
   avgEngagement: number;
   posts: number;
+  [key: string]: string | number;
 }
 
 export interface AccountSeriesRow {
@@ -258,9 +261,53 @@ export interface LeaderboardResponse {
   entries: LeaderboardEntry[];
 }
 
-export interface TimelineMarker {
-  index: number | null;
+export interface TopPostsCardProps {
+  posts: TopPostItem[];
+}
+
+export interface LeaderboardCardProps {
+  organizationId: string;
+  organizationSlug: string;
+  variant?: "module" | "page";
+}
+
+export interface AnalyticsPageClientProps {
+  organizationSlug: string;
+}
+
+export type AnalyticsProviderFilter = "all" | "twitter" | "linkedin";
+
+export interface AccountDetailViewProps {
+  organizationSlug: string;
+  handle: string;
+  variant?: "modal" | "page";
+}
+
+export interface AccountModalProps {
+  title: string;
+  children: ReactNode;
+}
+
+export interface AccountEngagementPoint {
+  day: string;
+  engagement: number;
+  [key: string]: string | number;
+}
+
+export interface AccountIdentity {
+  provider: string;
+  providerAccountId: string;
+  username: string;
+  displayName: string | null;
+  profileImageUrl: string | null;
+  verified: boolean;
+  verifiedType: string | null;
+  followersCount: number | null;
+}
+
+export interface LeaderboardDetailMetric {
   label: string;
+  value: string;
 }
 
 export interface TrackAccountPreviewResponse {
@@ -297,8 +344,43 @@ export interface AccountSeriesChartCardProps {
   allKeys: string[];
   hiddenKeys: ReadonlySet<string>;
   onToggleSeries: (key: string) => void;
-  hoverIndex: number | null;
-  onHoverChange: (index: number | null) => void;
-  markers: TimelineMarker[];
+  markers: ChartMarker[];
   emptyMessage: string;
+}
+
+export interface ChartSeriesLegendProps {
+  config: ChartConfig;
+  orderedKeys: string[];
+  hiddenKeys: ReadonlySet<string>;
+  onToggle: (key: string) => void;
+}
+
+export interface FollowersCardProps {
+  accounts: SocialOverviewAccount[];
+  points: FollowerGrowthPoint[];
+  hiddenKeys: ReadonlySet<string>;
+  colorForKey: (key: string) => ChartColorPair;
+}
+
+export interface PostingPerformanceCardProps {
+  rows: PostingPerformanceChartRow[];
+}
+
+export interface ImpressionsShareCardProps {
+  organizationId: string;
+}
+
+export interface ImpressionsShareRow {
+  account: string;
+  impressions: number;
+  [key: string]: string | number;
+}
+
+export interface ConnectAccountsButtonsProps {
+  organizationId: string;
+}
+
+export interface ProviderIconProps {
+  provider: string;
+  className?: string;
 }

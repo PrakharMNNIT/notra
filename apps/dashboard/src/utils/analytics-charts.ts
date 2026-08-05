@@ -1,12 +1,15 @@
+import { TOP_POST_CONTENT_PREVIEW_LENGTH } from "@/constants/analytics";
 import type {
   AccountSeriesRow,
   AnalyticsHeroSummary,
   EngagementTimeseriesPoint,
   FollowerGrowthPoint,
+  LeaderboardDetailMetric,
   PostingPerformanceChartRow,
   PostingPerformancePoint,
   SocialOverviewAccount,
 } from "@/types/analytics";
+import { chartKey } from "@/utils/chart-keys";
 
 const compactFormatter = new Intl.NumberFormat("en", {
   notation: "compact",
@@ -40,7 +43,7 @@ export function accountSeriesKey(
   provider: string,
   providerAccountId: string
 ): string {
-  return `${provider}:${providerAccountId}`;
+  return chartKey(`${provider}-${providerAccountId}`);
 }
 
 export function buildTimelineDays(days: number): string[] {
@@ -77,10 +80,10 @@ export function buildAccountSeriesRows(
   });
 }
 
-export function markerIndexForDate(
+export function markerLabelForDate(
   timelineDays: string[],
   isoDate: string | null
-): number | null {
+): string | null {
   if (!isoDate) {
     return null;
   }
@@ -94,7 +97,7 @@ export function markerIndexForDate(
     return null;
   }
   const index = timelineDays.indexOf(day);
-  return index === -1 ? null : index;
+  return index === -1 ? null : formatDayLabel(day);
 }
 
 export function sumMetric(
@@ -144,4 +147,35 @@ export function buildAnalyticsHeroSummary(
   const engagementRate =
     impressions > 0 ? (interactions / impressions) * PERCENT : null;
   return { followers, impressions, interactions, posts, engagementRate };
+}
+
+const WHITESPACE_REGEX = /\s+/g;
+
+export function previewPostContent(content: string): string {
+  const singleLine = content.replace(WHITESPACE_REGEX, " ").trim();
+  if (singleLine.length <= TOP_POST_CONTENT_PREVIEW_LENGTH) {
+    return singleLine;
+  }
+  return `${singleLine.slice(0, TOP_POST_CONTENT_PREVIEW_LENGTH)}\u2026`;
+}
+
+export function leaderboardDetailMetrics(
+  account: SocialOverviewAccount
+): LeaderboardDetailMetric[] {
+  const interactions =
+    (account.likes ?? 0) + (account.replies ?? 0) + (account.reposts ?? 0);
+  const engagementRate =
+    account.impressions && account.impressions > 0
+      ? `${((interactions / account.impressions) * PERCENT).toFixed(1)}%`
+      : "N/A";
+  return [
+    { label: "Followers", value: formatMetric(account.followersCount) },
+    { label: "Impressions", value: formatMetric(account.impressions) },
+    { label: "Likes", value: formatMetric(account.likes) },
+    { label: "Replies", value: formatMetric(account.replies) },
+    { label: "Reposts", value: formatMetric(account.reposts) },
+    { label: "Quotes", value: formatMetric(account.quotes) },
+    { label: "Bookmarks", value: formatMetric(account.bookmarks) },
+    { label: "Eng. rate", value: engagementRate },
+  ];
 }

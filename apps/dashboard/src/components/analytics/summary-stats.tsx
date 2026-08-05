@@ -1,5 +1,6 @@
 "use client";
 
+import { Card, CardContent } from "@notra/ui/components/ui/card";
 import { useMemo } from "react";
 import { InstrumentGrid } from "@/components/instrument/instrument-grid";
 import { cn } from "@/lib/utils";
@@ -47,22 +48,24 @@ export function SummaryStats({ accounts, points }: SummaryStatsProps) {
   return (
     <InstrumentGrid className="grid-cols-2 lg:grid-cols-4">
       {tiles.map((tile) => (
-        <div className="space-y-1 bg-card px-3 py-2.5" key={tile.label}>
-          <p className="font-mono text-[0.625rem] text-muted-foreground uppercase tracking-[0.14em]">
-            {tile.label}
-          </p>
-          <p
-            className={cn(
-              "font-mono text-[1.625rem] tabular-nums leading-none tracking-tight",
-              tile.accent && "text-primary"
-            )}
-          >
-            {tile.value}
-          </p>
-          <p className="truncate text-[0.6875rem] text-muted-foreground">
-            {tile.hint}
-          </p>
-        </div>
+        <Card key={tile.label}>
+          <CardContent className="flex flex-1 flex-col justify-center gap-2">
+            <p className="font-medium text-muted-foreground text-sm">
+              {tile.label}
+            </p>
+            <p
+              className={cn(
+                "font-bold text-3xl tabular-nums",
+                tile.accent && "text-primary"
+              )}
+            >
+              {tile.value}
+            </p>
+            <p className="truncate text-muted-foreground text-xs">
+              {tile.hint}
+            </p>
+          </CardContent>
+        </Card>
       ))}
     </InstrumentGrid>
   );

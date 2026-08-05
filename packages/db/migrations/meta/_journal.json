@@ -418,50 +418,8 @@
     {
       "idx": 59,
       "version": "7",
-      "when": 1785441254484,
-      "tag": "0059_romantic_joystick",
-      "breakpoints": true
-    },
-    {
-      "idx": 60,
-      "version": "7",
-      "when": 1785519823345,
-      "tag": "0060_complete_nightcrawler",
-      "breakpoints": true
-    },
-    {
-      "idx": 61,
-      "version": "7",
-      "when": 1785580721087,
-      "tag": "0061_lazy_dreadnoughts",
-      "breakpoints": true
-    },
-    {
-      "idx": 62,
-      "version": "7",
-      "when": 1785669058664,
-      "tag": "0062_brave_menace",
-      "breakpoints": true
-    },
-    {
-      "idx": 63,
-      "version": "7",
-      "when": 1785669117308,
-      "tag": "0063_slimy_hellcat",
-      "breakpoints": true
-    },
-    {
-      "idx": 64,
-      "version": "7",
-      "when": 1785669176828,
-      "tag": "0064_exotic_scourge",
-      "breakpoints": true
-    },
-    {
-      "idx": 65,
-      "version": "7",
-      "when": 1785706877007,
-      "tag": "0065_cool_prism",
+      "when": 1785938247557,
+      "tag": "0059_great_sphinx",
       "breakpoints": true
     }
   ]

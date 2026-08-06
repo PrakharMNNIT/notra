@@ -2,11 +2,13 @@
 
 import {
   ArrowUp01Icon,
+  Calendar03Icon,
+  Message01Icon,
   Moon02Icon,
   PlusSignIcon,
   Settings01Icon,
+  SparklesIcon,
   Sun03Icon,
-  Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -20,7 +22,6 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@notra/ui/components/ui/dropdown-menu";
@@ -40,6 +41,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { CreditBalanceMenuItem } from "@/components/billing/credit-balance-button";
+import { useFeedback } from "@/components/dashboard/feedback-context";
 import { authClient } from "@/lib/auth/client";
 import { cn, errorMessageOr } from "@/lib/utils";
 import type { OrganizationOptionsListProps } from "@/types/dashboard";
@@ -207,6 +210,7 @@ export function OrganizationOptionsList({
   organizations,
   selectedOrganizationId,
   onSelect,
+  onCreate,
   disabled = false,
 }: OrganizationOptionsListProps) {
   if (!organizations.length) {
@@ -219,33 +223,42 @@ export function OrganizationOptionsList({
 
   return (
     <DropdownMenuGroup>
-      <DropdownMenuLabel>Organizations</DropdownMenuLabel>
-      {organizations.map((org) => (
-        <DropdownMenuItem
-          className="cursor-pointer gap-2 pr-8"
-          disabled={disabled}
-          key={org.id}
-          onClick={() => onSelect(org.id)}
-        >
-          <Avatar className="size-6 rounded-lg after:rounded-lg">
-            <AvatarImage src={org.logo || undefined} />
-            <AvatarFallback className="rounded-lg">
-              {org.name.slice(0, 2)}
-            </AvatarFallback>
-          </Avatar>
-          <OverflowAwareText
-            className="text-sm"
-            text={org.name}
-            thresholdMultiplier={1.75}
-          />
-          {selectedOrganizationId === org.id ? (
-            <HugeiconsIcon
-              className="absolute right-2 size-4 text-muted-foreground"
-              icon={Tick02Icon}
-            />
-          ) : null}
-        </DropdownMenuItem>
-      ))}
+      {organizations.map((org) => {
+        const isSelected = selectedOrganizationId === org.id;
+        return (
+          <div className="flex items-center gap-1" key={org.id}>
+            <DropdownMenuItem
+              className={cn(
+                "min-w-0 flex-1 cursor-pointer gap-2",
+                isSelected && "bg-accent text-accent-foreground"
+              )}
+              disabled={disabled}
+              onClick={() => onSelect(org.id)}
+            >
+              <Avatar className="size-6 rounded-lg after:rounded-lg">
+                <AvatarImage src={org.logo || undefined} />
+                <AvatarFallback className="rounded-lg">
+                  {org.name.slice(0, 2)}
+                </AvatarFallback>
+              </Avatar>
+              <OverflowAwareText
+                className="text-sm"
+                text={org.name}
+                thresholdMultiplier={1.75}
+              />
+            </DropdownMenuItem>
+            {isSelected && onCreate ? (
+              <DropdownMenuItem
+                aria-label="Create organization"
+                className="size-7 shrink-0 cursor-pointer justify-center p-0 text-muted-foreground data-highlighted:text-foreground"
+                onClick={onCreate}
+              >
+                <HugeiconsIcon className="size-4" icon={PlusSignIcon} />
+              </DropdownMenuItem>
+            ) : null}
+          </div>
+        );
+      })}
     </DropdownMenuGroup>
   );
 }
@@ -260,6 +273,14 @@ export function OrgSelector() {
   const { setTheme, resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
   const toggleTheme = () => setTheme(isDark ? "light" : "dark");
+  const { openFeedback } = useFeedback();
+
+  function triggerScheduleDemo() {
+    const btn = document.querySelector<HTMLButtonElement>(
+      '[data-cal-namespace="15min"]'
+    );
+    btn?.click();
+  }
   const { activeOrganization, organizations, isLoading } =
     useOrganizationsContext();
   const { data: customer } = useCustomer({
@@ -340,6 +361,20 @@ export function OrgSelector() {
     }
   }
 
+  function handleCreateOrganization() {
+    if (!hasActivePaidPlan) {
+      toast("Subscribe to create more organizations", {
+        action: {
+          label: "Upgrade",
+          onClick: () =>
+            router.push(`/${activeOrganization?.slug}/settings/billing`),
+        },
+      });
+      return;
+    }
+    setIsCreateModalOpen(true);
+  }
+
   function handleSelectOrganization(organizationId: string) {
     const organization = organizations.find((org) => org.id === organizationId);
     if (organization) {
@@ -366,12 +401,13 @@ export function OrgSelector() {
           )}
           <DropdownMenuContent
             align="start"
-            className="w-[--radix-dropdown-menu-trigger-width] min-w-56 rounded-lg"
+            className="w-72 rounded-lg"
             side={dropdownSide}
             sideOffset={4}
           >
             <OrganizationOptionsList
               disabled={isNavigating}
+              onCreate={handleCreateOrganization}
               onSelect={handleSelectOrganization}
               organizations={organizations}
               selectedOrganizationId={activeOrganization?.id}
@@ -379,27 +415,38 @@ export function OrgSelector() {
 
             <DropdownMenuSeparator />
 
+            <CreditBalanceMenuItem />
             <DropdownMenuItem
-              className="flex cursor-pointer items-center gap-4"
-              onClick={() => {
-                if (!hasActivePaidPlan) {
-                  toast("Subscribe to create more organizations", {
-                    action: {
-                      label: "Upgrade",
-                      onClick: () =>
-                        router.push(
-                          `/${activeOrganization?.slug}/settings/billing`
-                        ),
-                    },
-                  });
-                  return;
-                }
-                setIsCreateModalOpen(true);
-              }}
+              className="cursor-pointer"
+              onClick={() => openFeedback()}
             >
-              <HugeiconsIcon icon={PlusSignIcon} />
-              Create Organization
+              <HugeiconsIcon icon={Message01Icon} />
+              Feedback
+              <Kbd className="ml-auto">F</Kbd>
             </DropdownMenuItem>
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onClick={triggerScheduleDemo}
+            >
+              <HugeiconsIcon icon={Calendar03Icon} />
+              Schedule a Demo
+              <Kbd className="ml-auto">S</Kbd>
+            </DropdownMenuItem>
+
+            {hasActivePaidPlan ? null : (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="cursor-pointer bg-primary/10 text-primary data-highlighted:bg-primary/15 data-highlighted:text-primary [&_svg]:text-primary"
+                  onClick={() =>
+                    router.push(`/${activeOrganization?.slug}/settings/billing`)
+                  }
+                >
+                  <HugeiconsIcon icon={SparklesIcon} />
+                  Upgrade to Pro
+                </DropdownMenuItem>
+              </>
+            )}
 
             <DropdownMenuSeparator />
 

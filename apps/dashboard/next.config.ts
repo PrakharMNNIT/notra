@@ -27,7 +27,6 @@ const nextConfig: NextConfig = {
     "@notra/content-generation",
     "@notra/kiwi",
     "@notra/utils",
-    "@usenotra/geo",
   ],
   serverExternalPackages: ["@resvg/resvg-js"],
   async rewrites() {

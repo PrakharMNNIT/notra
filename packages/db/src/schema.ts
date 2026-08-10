@@ -1452,9 +1452,6 @@ export const organizationNotificationSettings = pgTable(
   ]
 );
 
-
-
-
 export const postCollections = pgTable(
   "post_collections",
   {
@@ -2468,7 +2465,6 @@ export const organizationNotificationSettingsRelations = relations(
     }),
   })
 );
-
 
 export const postCollectionsRelations = relations(
   postCollections,

@@ -116,7 +116,6 @@ export async function startSocialAnalyticsSyncRun(payload: {
   return { runId: run.runId };
 }
 
-
 export async function startOnDemandRun(
   payload: unknown
 ): Promise<{ runId: string }> {

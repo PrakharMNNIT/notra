@@ -435,6 +435,13 @@
       "when": 1785580721087,
       "tag": "0061_lazy_dreadnoughts",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1786380248232,
+      "tag": "0062_light_johnny_storm",
+      "breakpoints": true
     }
   ]
 }

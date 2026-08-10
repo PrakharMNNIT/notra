@@ -1,8 +1,12 @@
 "use client";
 import { useFlag } from "@databuddy/sdk/react";
 import {
+  AiBrowserIcon,
+  AiChat01Icon,
+  Analytics01Icon,
   AnalyticsUpIcon,
   Calendar03Icon,
+  ChartAnalysisIcon,
   Home01Icon,
   Key01Icon,
   MagicWand01Icon,
@@ -28,6 +32,7 @@ import { useOrganizationsContext } from "@/components/providers/organization-pro
 import { IRIS_FLAG_KEY, IRIS_NAV_LINK } from "@/constants/iris";
 import type { NavMainCategory, NavMainItem } from "@/types/components/nav";
 import { filterIrisNavItems, isIrisVisibleInNav } from "@/utils/iris-flag";
+import { resolveActiveNavLink } from "@/utils/nav";
 import { CollapsibleSidebarGroup } from "./collapsible-nav-group";
 import { NavBrandIdentity } from "./nav-brand-identity";
 
@@ -55,6 +60,12 @@ const navMainItems: NavMainItem[] = [
     link: "/content",
     icon: NoteIcon,
     label: "Content",
+    category: "workspace",
+  },
+  {
+    link: "/analytics",
+    icon: Analytics01Icon,
+    label: "Analytics",
     category: "workspace",
   },
   {
@@ -115,12 +126,12 @@ const NavGroup = memo(function NavGroup({
   items,
   slug,
   label,
-  pathname,
+  activeLink,
 }: {
   items: NavMainItem[];
   slug: string;
   label?: string;
-  pathname: string;
+  activeLink: string | null;
 }) {
   if (items.length === 0) {
     return null;
@@ -130,10 +141,7 @@ const NavGroup = memo(function NavGroup({
     <SidebarMenu>
       {items.map((item) => {
         const href = `/${slug}${item.link}`;
-        const isActive =
-          item.link === ""
-            ? pathname === `/${slug}` || pathname === `/${slug}/`
-            : pathname.startsWith(href);
+        const isActive = item.link === activeLink;
         return (
           <SidebarMenuItem key={item.link}>
             <SidebarMenuButton
@@ -190,16 +198,21 @@ export function NavMain() {
 
   const slug = activeOrganization.slug;
   const rootItems = itemsByCategory.none;
+  const activeLink = resolveActiveNavLink(
+    pathname,
+    slug,
+    navMainItems.map((item) => item.link)
+  );
 
   return (
     <>
-      <NavGroup items={rootItems} pathname={pathname} slug={slug} />
+      <NavGroup activeLink={activeLink} items={rootItems} slug={slug} />
       {categories.map((category) => (
         <Fragment key={category}>
           <NavGroup
+            activeLink={activeLink}
             items={filterIrisNavItems(itemsByCategory[category], irisVisible)}
             label={categoryLabels[category]}
-            pathname={pathname}
             slug={slug}
           />
           {category === "workspace" && <NavBrandIdentity slug={slug} />}

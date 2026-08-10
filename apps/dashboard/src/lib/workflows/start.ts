@@ -7,6 +7,7 @@ import {
   IRIS_START_CLAIM_SCOPE,
   IRIS_START_CLAIM_TTL_SECONDS,
 } from "@/constants/iris";
+import { socialAnalyticsSyncPayloadSchema } from "@/schemas/analytics";
 import { brandGuidelinesWorkflowPayloadSchema } from "@/schemas/brand-guidelines";
 import {
   eventWorkflowPayloadSchema,
@@ -28,6 +29,7 @@ import { irisControllerRun } from "@/workflows/iris-controller";
 import { onDemandContentWorkflow } from "@/workflows/on-demand-content";
 import { onboardingAgentWorkflow } from "@/workflows/onboarding-agent";
 import { scheduleContentWorkflow } from "@/workflows/schedule-content";
+import { socialAnalyticsSyncWorkflow } from "@/workflows/social-analytics-sync";
 
 export async function startBrandAnalysisRun(
   payload: BrandAnalysisPayload
@@ -103,6 +105,14 @@ export async function startEventRun(payload: {
 }): Promise<{ runId: string }> {
   const parsed = eventWorkflowPayloadSchema.parse(payload);
   const run = await start(eventContentWorkflow, [parsed]);
+  return { runId: run.runId };
+}
+
+export async function startSocialAnalyticsSyncRun(payload: {
+  organizationId?: string;
+}): Promise<{ runId: string }> {
+  const parsed = socialAnalyticsSyncPayloadSchema.parse(payload);
+  const run = await start(socialAnalyticsSyncWorkflow, [parsed]);
   return { runId: run.runId };
 }
 

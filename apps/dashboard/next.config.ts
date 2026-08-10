@@ -112,6 +112,10 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: "https",
+        hostname: "logos.context.dev",
+      },
+      {
+        protocol: "https",
         hostname: "pbs.twimg.com",
       },
       {

@@ -95,6 +95,12 @@ export const ratelimit = {
     prefix: "ratelimit:chat-relay",
     limiter: Ratelimit.slidingWindow(20, "1m"),
   }),
+  geoIngest: new Ratelimit({
+    redis,
+    analytics: true,
+    prefix: "ratelimit:geo-ingest",
+    limiter: Ratelimit.slidingWindow(1000, "1m"),
+  }),
   slackOAuth: new Ratelimit({
     redis,
     analytics: true,

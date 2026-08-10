@@ -151,37 +151,6 @@ CREATE TABLE "autonomy_tasks" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "slack_integrations" (
-	"id" text PRIMARY KEY NOT NULL,
-	"organization_id" text NOT NULL,
-	"created_by_user_id" text NOT NULL,
-	"display_name" text NOT NULL,
-	"encrypted_bot_token" text NOT NULL,
-	"slack_team_id" text NOT NULL,
-	"slack_team_name" text,
-	"slack_bot_user_id" text,
-	"allowed_channel_ids" jsonb,
-	"notification_channel_id" text,
-	"enabled" boolean DEFAULT true NOT NULL,
-	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE "tracked_social_accounts" (
-	"id" text PRIMARY KEY NOT NULL,
-	"organization_id" text NOT NULL,
-	"provider" text NOT NULL,
-	"provider_account_id" text NOT NULL,
-	"username" text NOT NULL,
-	"display_name" text,
-	"profile_image_url" text,
-	"verified" boolean DEFAULT false NOT NULL,
-	"verified_type" text,
-	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
-);
---> statement-breakpoint
-ALTER TABLE "connected_social_accounts" ADD COLUMN "verified_type" text;--> statement-breakpoint
 ALTER TABLE "autonomy_actions" ADD CONSTRAINT "autonomy_actions_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "autonomy_actions" ADD CONSTRAINT "autonomy_actions_run_id_autonomy_runs_id_fk" FOREIGN KEY ("run_id") REFERENCES "public"."autonomy_runs"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "autonomy_actions" ADD CONSTRAINT "autonomy_actions_task_id_autonomy_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."autonomy_tasks"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
@@ -204,9 +173,6 @@ ALTER TABLE "autonomy_signals" ADD CONSTRAINT "autonomySignals_coalescedIntoSign
 ALTER TABLE "autonomy_tasks" ADD CONSTRAINT "autonomy_tasks_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "autonomy_tasks" ADD CONSTRAINT "autonomy_tasks_goal_id_autonomy_goals_id_fk" FOREIGN KEY ("goal_id") REFERENCES "public"."autonomy_goals"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "autonomy_tasks" ADD CONSTRAINT "autonomy_tasks_run_id_autonomy_runs_id_fk" FOREIGN KEY ("run_id") REFERENCES "public"."autonomy_runs"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "slack_integrations" ADD CONSTRAINT "slack_integrations_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "slack_integrations" ADD CONSTRAINT "slack_integrations_created_by_user_id_users_id_fk" FOREIGN KEY ("created_by_user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "tracked_social_accounts" ADD CONSTRAINT "tracked_social_accounts_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "autonomyActions_organizationId_idx" ON "autonomy_actions" USING btree ("organization_id");--> statement-breakpoint
 CREATE INDEX "autonomyActions_runId_idx" ON "autonomy_actions" USING btree ("run_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "autonomyActions_org_capability_idempotency_uidx" ON "autonomy_actions" USING btree ("organization_id","capability_name","idempotency_key");--> statement-breakpoint
@@ -234,13 +200,4 @@ CREATE INDEX "autonomySignals_organizationId_status_occurredAt_idx" ON "autonomy
 CREATE INDEX "autonomyTasks_organizationId_idx" ON "autonomy_tasks" USING btree ("organization_id");--> statement-breakpoint
 CREATE INDEX "autonomyTasks_goalId_idx" ON "autonomy_tasks" USING btree ("goal_id");--> statement-breakpoint
 CREATE INDEX "autonomyTasks_runId_idx" ON "autonomy_tasks" USING btree ("run_id");--> statement-breakpoint
-CREATE INDEX "autonomyTasks_organizationId_status_waitUntil_idx" ON "autonomy_tasks" USING btree ("organization_id","status","wait_until");--> statement-breakpoint
-CREATE INDEX "slackIntegrations_organizationId_idx" ON "slack_integrations" USING btree ("organization_id");--> statement-breakpoint
-CREATE INDEX "slackIntegrations_createdByUserId_idx" ON "slack_integrations" USING btree ("created_by_user_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "slackIntegrations_teamId_uidx" ON "slack_integrations" USING btree ("slack_team_id");--> statement-breakpoint
-CREATE INDEX "trackedSocialAccounts_organizationId_idx" ON "tracked_social_accounts" USING btree ("organization_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "trackedSocialAccounts_org_provider_account_uidx" ON "tracked_social_accounts" USING btree ("organization_id","provider","provider_account_id");--> statement-breakpoint
-ALTER TABLE "connected_social_accounts" DROP COLUMN "access_token";--> statement-breakpoint
-ALTER TABLE "connected_social_accounts" DROP COLUMN "refresh_token";--> statement-breakpoint
-ALTER TABLE "connected_social_accounts" DROP COLUMN "scope";--> statement-breakpoint
-ALTER TABLE "connected_social_accounts" DROP COLUMN "token_expires_at";
+CREATE INDEX "autonomyTasks_organizationId_status_waitUntil_idx" ON "autonomy_tasks" USING btree ("organization_id","status","wait_until");

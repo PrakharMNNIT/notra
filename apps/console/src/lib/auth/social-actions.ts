@@ -30,7 +30,7 @@ export async function startSocialSignInAction(input: StartSocialSignInInput) {
   }
 
   const returnTo = sanitizeReturnTo(input.returnTo ?? null);
-  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+  const appUrl = process.env.CONSOLE_APP_URL ?? "http://localhost:3003";
 
   const nonce = crypto.randomUUID();
   const cookieStore = await cookies();

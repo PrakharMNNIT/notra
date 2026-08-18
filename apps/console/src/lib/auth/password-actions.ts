@@ -13,24 +13,13 @@ import { headers } from "next/headers";
 import { UserSyncError, WorkOSAuthError } from "@/lib/auth/errors";
 import { authenticateResolvingOrgSelection } from "@/lib/auth/org-selection";
 import { sanitizeReturnTo } from "@/lib/auth/return-to";
-import { syncAuthenticatedUser } from "@/lib/auth/sync";
+import { ensureLocalUser } from "@/lib/auth/sync";
 import { readWorkOSError } from "@/lib/auth/workos-error";
-import { sendResetPasswordAction } from "@/lib/email/actions";
-import {
-  loginSchema,
-  signupSchema,
-  verificationCodeSchema,
-} from "@/schemas/auth/credentials";
-import type {
-  ForgotPasswordInput,
-  ResetPasswordInput,
-  SignUpWithPasswordInput,
-} from "@/types/auth/password-actions";
+import { loginSchema, verificationCodeSchema } from "@/schemas/auth";
 import { getClientIpFromHeaders, ratelimit } from "@/utils/ratelimit";
 
 const VERIFICATION_REQUIRED_CODE = "email_verification_required";
-const NAME_SPLIT_REGEX = /\s+/;
-const DEFAULT_POST_LOGIN_PATH = "/callback";
+const DEFAULT_POST_LOGIN_PATH = "/dashboard";
 const RATE_LIMITED_MESSAGE = "Too many attempts. Please try again shortly.";
 
 async function isRateLimited(limiter: Ratelimit, email: string) {
@@ -49,27 +38,17 @@ function getClientId() {
 }
 
 function getAppUrl() {
-  return process.env.APP_URL ?? "http://localhost:3000";
+  return process.env.CONSOLE_APP_URL ?? "http://localhost:3003";
 }
-
-const tryWorkOSAuth = <T>(run: () => Promise<T>) =>
-  Effect.tryPromise({
-    try: run,
-    catch: (error) => new WorkOSAuthError({ error }),
-  });
 
 const completeAuthentication = Effect.fn("auth.password.completeSession")(
   function* (response: AuthenticationResponse, returnTo?: string | null) {
+    yield* ensureLocalUser(response.user);
+
     yield* Effect.tryPromise({
       try: () => saveSession(response, getAppUrl()),
       catch: (cause) =>
         new UserSyncError({ message: "Failed to persist session", cause }),
-    });
-
-    yield* syncAuthenticatedUser({
-      workosUser: response.user,
-      oauthTokens: response.oauthTokens,
-      authenticationMethod: response.authenticationMethod,
     });
 
     const redirectTo =
@@ -147,51 +126,6 @@ export async function signInWithPasswordAction(
   );
 }
 
-export async function signUpWithPasswordAction(
-  input: SignUpWithPasswordInput
-): Promise<AuthFlowResult> {
-  const parsed = signupSchema.safeParse(input);
-
-  if (!parsed.success) {
-    return {
-      status: "error",
-      message: parsed.error.issues[0]?.message ?? "Invalid details",
-    };
-  }
-
-  if (await isRateLimited(ratelimit.signUp, parsed.data.email)) {
-    return { status: "error", message: RATE_LIMITED_MESSAGE };
-  }
-
-  const [firstName, ...rest] = (input.name ?? "")
-    .trim()
-    .split(NAME_SPLIT_REGEX);
-
-  return runAuthFlow(
-    parsed.data.email,
-    Effect.gen(function* () {
-      yield* tryWorkOSAuth(() =>
-        getWorkOS().userManagement.createUser({
-          email: parsed.data.email,
-          password: parsed.data.password,
-          firstName: firstName || undefined,
-          lastName: rest.join(" ") || undefined,
-        })
-      );
-
-      const response = yield* authenticateResolvingOrgSelection(() =>
-        getWorkOS().userManagement.authenticateWithPassword({
-          clientId: getClientId(),
-          email: parsed.data.email,
-          password: parsed.data.password,
-        })
-      );
-
-      return yield* completeAuthentication(response, input.returnTo);
-    })
-  );
-}
-
 export async function verifyEmailCodeAction(
   input: VerifyEmailCodeInput
 ): Promise<AuthFlowResult> {
@@ -217,60 +151,5 @@ export async function verifyEmailCodeAction(
 
       return yield* completeAuthentication(response, input.returnTo);
     })
-  );
-}
-
-export async function forgotPasswordAction(
-  input: ForgotPasswordInput
-): Promise<{ sent: boolean }> {
-  if (await isRateLimited(ratelimit.forgotPassword, input.email)) {
-    return { sent: false };
-  }
-
-  return Effect.runPromise(
-    Effect.gen(function* () {
-      const reset = yield* tryWorkOSAuth(() =>
-        getWorkOS().userManagement.createPasswordReset({ email: input.email })
-      );
-
-      yield* tryWorkOSAuth(() =>
-        sendResetPasswordAction({
-          userEmail: input.email,
-          resetLink: reset.passwordResetUrl,
-        })
-      );
-
-      return { sent: true };
-    }).pipe(
-      Effect.catch((error) =>
-        Effect.logWarning("Password reset request failed").pipe(
-          Effect.annotateLogs({
-            error: readWorkOSError(error.error).message,
-          }),
-          Effect.as({ sent: true })
-        )
-      )
-    )
-  );
-}
-
-export async function resetPasswordAction(
-  input: ResetPasswordInput
-): Promise<AuthFlowResult> {
-  return Effect.runPromise(
-    tryWorkOSAuth(() =>
-      getWorkOS().userManagement.resetPassword({
-        token: input.token,
-        newPassword: input.newPassword,
-      })
-    ).pipe(
-      Effect.as<AuthFlowResult>({ status: "success", redirectTo: "/login" }),
-      Effect.catch((error) =>
-        Effect.succeed<AuthFlowResult>({
-          status: "error",
-          message: readWorkOSError(error.error).message,
-        })
-      )
-    )
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { Effect } from "effect";
-import { authClient } from "@/lib/auth/client";
+import { startSocialSignInAction } from "@/lib/auth/social-actions";
 import { dashboardOrpc } from "@/lib/orpc/query";
 import {
   GitHubAccountConnectionIncompleteError,
@@ -9,27 +9,22 @@ import {
   type StartGitHubInstallResult,
 } from "@/types/integrations/github";
 
-function authorizeGitHub(callbackURL: string, scopes?: string[]) {
+function authorizeGitHub(callbackURL: string) {
   return Effect.tryPromise({
-    try: () =>
-      authClient.linkSocial({
+    try: async () => {
+      await startSocialSignInAction({
         provider: "github",
-        callbackURL,
-        ...(scopes ? { scopes } : {}),
-      }),
+        returnTo: callbackURL,
+      });
+      return true;
+    },
     catch: (cause) => new GitHubInstallStartError({ cause }),
-  }).pipe(
-    Effect.flatMap((result) =>
-      result.error
-        ? Effect.fail(new GitHubInstallStartError({ cause: result.error }))
-        : Effect.succeed(true)
-    )
-  );
+  });
 }
 
 export function reauthorizeGitHub(callbackURL: string) {
   return Effect.runPromise(
-    authorizeGitHub(callbackURL, ["read:org"]).pipe(
+    authorizeGitHub(callbackURL).pipe(
       Effect.match({
         onFailure: () => false,
         onSuccess: () => true,

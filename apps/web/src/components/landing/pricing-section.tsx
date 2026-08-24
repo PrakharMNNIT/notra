@@ -11,6 +11,7 @@ import {
   m,
   useReducedMotion,
 } from "motion/react";
+import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import { PricingGiftIcon } from "@/components/landing/pricing-icons";
@@ -23,6 +24,8 @@ import {
   PRICING_HEADING,
   PRICING_PLANS,
   PRICING_SUBHEADING,
+  TRACKED_ENGINES,
+  TRACKED_ENGINES_CAPTION,
 } from "@/constants/landing/pricing";
 import { PRICING_ICONS } from "@/constants/landing/pricing-icons";
 import type {
@@ -79,6 +82,51 @@ function PricingBillingToggle({
   );
 }
 
+function TrackedEnginesRow() {
+  return (
+    <div className="flex flex-col items-center gap-5">
+      <p className="text-center font-medium font-sans text-[#1E1E1E99] text-sm tracking-[-0.01em] dark:text-white/50">
+        {TRACKED_ENGINES_CAPTION}
+      </p>
+      <div className="flex flex-wrap items-center justify-center gap-x-9 gap-y-5">
+        {TRACKED_ENGINES.map((engine) =>
+          engine.darkSrc ? (
+            <span className="inline-flex" key={engine.name} title={engine.name}>
+              <Image
+                alt={engine.name}
+                className="h-7 w-auto dark:hidden"
+                height={28}
+                src={engine.src}
+                unoptimized
+                width={engine.width}
+              />
+              <Image
+                alt={engine.name}
+                className="hidden h-7 w-auto dark:block"
+                height={28}
+                src={engine.darkSrc}
+                unoptimized
+                width={engine.width}
+              />
+            </span>
+          ) : (
+            <Image
+              alt={engine.name}
+              className="h-7 w-auto"
+              height={28}
+              key={engine.name}
+              src={engine.src}
+              title={engine.name}
+              unoptimized
+              width={engine.width}
+            />
+          )
+        )}
+      </div>
+    </div>
+  );
+}
+
 function PricingCard({ plan, billingPeriod }: PricingCardProps) {
   const isFeatured = plan.variant === "featured";
   const showBadge = Boolean(plan.hasAnnualBadge) && billingPeriod === "yearly";
@@ -93,7 +141,7 @@ function PricingCard({ plan, billingPeriod }: PricingCardProps) {
   return (
     <article
       className={cn(
-        "relative flex h-172 w-full max-w-96 shrink-0 flex-col overflow-clip rounded-3xl lg:order-none lg:w-88 lg:max-w-none",
+        "relative flex h-184 w-full flex-col overflow-clip rounded-3xl lg:order-none",
         isFeatured
           ? "order-first bg-[#8B5CF6]"
           : "bg-[#F7F7F7] dark:bg-white/[0.04]"
@@ -285,7 +333,7 @@ export function LandingPricingSection({
             value={billingPeriod}
           />
 
-          <div className="flex w-full max-w-[69rem] flex-col items-center gap-6 lg:flex-row lg:items-stretch lg:justify-center">
+          <div className="grid w-full max-w-96 grid-cols-1 gap-4 lg:max-w-[80rem] lg:grid-cols-4">
             {PRICING_PLANS.map((plan) => (
               <PricingCard
                 billingPeriod={billingPeriod}
@@ -295,6 +343,8 @@ export function LandingPricingSection({
             ))}
           </div>
         </div>
+
+        <TrackedEnginesRow />
       </section>
     </LazyMotion>
   );

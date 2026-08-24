@@ -10,7 +10,6 @@ import {
   Loading03Icon,
   Message01Icon,
   NoteIcon,
-  PlugIcon,
   QuotesIcon,
   SearchIcon,
   SparklesIcon,
@@ -39,6 +38,8 @@ import {
 import { useHotkeys } from "react-hotkeys-hook";
 import { useFeedback } from "@/components/dashboard/feedback-context";
 import { useOrganizationsContext } from "@/components/providers/organization-provider";
+import { useGeoProjectQueryState } from "@/lib/hooks/use-geo-project-query";
+import { useHasAiCreditsFeature } from "@/lib/hooks/use-plan";
 import { dashboardOrpc } from "@/lib/orpc/query";
 import type {
   AiResult,
@@ -46,8 +47,13 @@ import type {
   EntityHit,
 } from "@/types/components/command-palette";
 import { truncateSnippet } from "@/utils/format";
+import { isGeoDashboardPath, withGeoProject } from "@/utils/geo-paths";
 import { useCommandPalette } from "./command-palette-context";
-import { COMMAND_ROUTES, COMMAND_SECTIONS } from "./registry";
+import {
+  COMMAND_ROUTES,
+  COMMAND_SECTIONS,
+  isCommandRouteAvailable,
+} from "./registry";
 
 const APPLE_PLATFORM_PATTERN = /Mac|iPhone|iPad|iPod/i;
 const SEARCH_DEBOUNCE_MS = 150;
@@ -83,6 +89,7 @@ const ENTITY_SECTION_ORDER = [
 const GROUPED_ROUTES = (() => {
   const groups: Record<CommandSection, typeof COMMAND_ROUTES> = {
     Navigation: [],
+    GEO: [],
     Workspace: [],
     Automation: [],
     Manage: [],
@@ -131,6 +138,7 @@ function BrailleSpinner({ className }: { className?: string }) {
 export function CommandPalette() {
   const { open, setOpen } = useCommandPalette();
   const { activeOrganization } = useOrganizationsContext();
+  const { hasAiCredits } = useHasAiCreditsFeature();
   const router = useRouter();
   const [query, setQuery] = useState("");
   const isApplePlatform = useSyncExternalStore(
@@ -150,6 +158,7 @@ export function CommandPalette() {
 
   const slug = activeOrganization?.slug ?? "";
   const organizationId = activeOrganization?.id ?? "";
+  const [projectParam] = useGeoProjectQueryState();
   const [debouncedQuery, setDebouncedQuery] = useState("");
 
   useEffect(() => {
@@ -329,15 +338,20 @@ export function CommandPalette() {
     };
   }, []);
 
+  const scopedPath = (path: string) =>
+    isGeoDashboardPath(path)
+      ? withGeoProject(path, projectParam ?? undefined)
+      : path;
+
   const navigate = (path: string) => {
     handleOpenChange(false);
-    router.push(path);
+    router.push(scopedPath(path));
   };
 
   const navigateFromAi = (path: string, label: string) => {
     setAiState({ status: "navigating", label });
     startNavigation(() => {
-      router.push(path);
+      router.push(scopedPath(path));
     });
     handleOpenChange(false);
   };
@@ -562,7 +576,9 @@ export function CommandPalette() {
               </CommandPrimitive.Empty>
 
               {COMMAND_SECTIONS.map((section) => {
-                const items = GROUPED_ROUTES[section];
+                const items = GROUPED_ROUTES[section].filter((route) =>
+                  isCommandRouteAvailable(route, hasAiCredits)
+                );
                 if (items.length === 0) {
                   return null;
                 }

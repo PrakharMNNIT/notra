@@ -7,10 +7,12 @@ import { cn } from "@notra/ui/lib/utils";
 import { useCustomer } from "autumn-js/react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { Suspense } from "react";
 import { toast } from "sonner";
 import { buttonVariants } from "@/components/button";
+import { planDisplayName } from "@/utils/billing-plans";
 
-export default function BillingSuccessPage() {
+function BillingSuccessPageContent() {
   const { slug } = useParams<{ slug: string }>();
   const { openCustomerPortal, data: customer } = useCustomer({
     expand: ["subscriptions.plan"],
@@ -19,13 +21,8 @@ export default function BillingSuccessPage() {
   const activeSubscription = customer?.subscriptions?.find(
     (sub) => !sub.addOn && sub.status === "active"
   );
-  const planId = activeSubscription?.plan?.id ?? activeSubscription?.planId;
-  let planName = "your new plan";
-  if (planId === "pro" || planId === "pro_yearly") {
-    planName = "Pro";
-  } else if (planId === "basic" || planId === "basic_yearly") {
-    planName = "Basic";
-  }
+  const planName =
+    planDisplayName(activeSubscription?.plan?.name) ?? "your new plan";
 
   async function handleManageBilling() {
     try {
@@ -98,5 +95,13 @@ export default function BillingSuccessPage() {
         </Link>
       </div>
     </div>
+  );
+}
+
+export default function BillingSuccessPage() {
+  return (
+    <Suspense fallback={null}>
+      <BillingSuccessPageContent />
+    </Suspense>
   );
 }

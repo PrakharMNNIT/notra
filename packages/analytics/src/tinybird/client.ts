@@ -1,12 +1,46 @@
-import { type IngestResult, type QueryResult, Tinybird } from "@tinybirdco/sdk";
+import {
+  type InferParams,
+  type IngestResult,
+  type QueryResult,
+  Tinybird,
+} from "@tinybirdco/sdk";
 import { bumpAnalyticsVersions, cachedQuery } from "../cache/query-cache";
 import type { AnalyticsCacheScope } from "../types/cache";
+import type {
+  AccountLeaderboardParams,
+  AccountLeaderboardRow,
+  AiTrafficLogRow,
+  AiTrafficOverviewRow,
+  AiTrafficTimeseriesRow,
+  EngagementTimeseriesParams,
+  EngagementTimeseriesRow,
+  FollowerGrowthParams,
+  FollowerGrowthRow,
+  GeoJourneyDetailRow,
+  GeoTrafficJourneysRow,
+  GeoTrafficLogParams,
+  GeoTrafficLogRow,
+  GeoTrafficOverviewRow,
+  GeoTrafficPagesParams,
+  GeoTrafficPagesRow,
+  GeoTrafficTimeseriesRow,
+  ModelUsageLatestParams,
+  ModelUsageLatestRow,
+  ModelUsageTrendParams,
+  ModelUsageTrendRow,
+  NotraAdoptionRow,
+  PostingPerformanceParams,
+  PostingPerformanceRow,
+  PostMetricsLookupRow,
+  SocialOverviewParams,
+  SocialOverviewRow,
+  TopPostsParams,
+  TopPostsRow,
+} from "../types/tinybird-endpoints";
 import {
   type AiTrafficEventRow,
   aiTrafficEvents,
-  type GeoMentionCheckRow,
   type GeoTrafficEventRow,
-  geoMentionChecks,
   geoTrafficEvents,
   type ModelUsageShareRow,
   modelUsageShare,
@@ -22,69 +56,29 @@ import {
   socialPosts,
 } from "./datasources";
 import {
-  type AccountLeaderboardParams,
-  type AccountLeaderboardRow,
-  type AiTrafficLogRow,
-  type AiTrafficOverviewRow,
-  type AiTrafficTimeseriesRow,
-  accountLeaderboard,
   aiTrafficLog,
   aiTrafficOverview,
   aiTrafficTimeseries,
-  type EngagementTimeseriesParams,
-  type EngagementTimeseriesRow,
-  engagementTimeseries,
-  type FollowerGrowthParams,
-  type FollowerGrowthRow,
-  followerGrowth,
-  type GeoCompetitorPromptsRow,
-  type GeoCompetitorShareRow,
-  type GeoCompetitorTimeseriesRow,
-  type GeoJourneyDetailRow,
-  type GeoLanguageShareRow,
-  type GeoOverviewRow,
-  type GeoPromptResultsRow,
-  type GeoTimeseriesRow,
-  type GeoTrafficJourneysRow,
-  type GeoTrafficLogParams,
-  type GeoTrafficLogRow,
-  type GeoTrafficOverviewRow,
-  type GeoTrafficPagesParams,
-  type GeoTrafficPagesRow,
-  type GeoTrafficTimeseriesRow,
-  geoCompetitorPrompts,
-  geoCompetitorShare,
-  geoCompetitorTimeseries,
+} from "./pipes/ai-traffic";
+import {
   geoJourneyDetail,
-  geoLanguageShare,
-  geoOverview,
-  geoPromptResults,
-  geoTimeseries,
   geoTrafficJourneys,
   geoTrafficLog,
   geoTrafficOverview,
   geoTrafficPages,
   geoTrafficTimeseries,
-  type ModelUsageLatestParams,
-  type ModelUsageLatestRow,
-  type ModelUsageTrendParams,
-  type ModelUsageTrendRow,
-  modelUsageLatest,
-  modelUsageTrend,
-  type NotraAdoptionRow,
+} from "./pipes/geo-traffic";
+import { modelUsageLatest, modelUsageTrend } from "./pipes/model-usage";
+import {
+  accountLeaderboard,
+  engagementTimeseries,
+  followerGrowth,
   notraAdoption,
-  type PostingPerformanceParams,
-  type PostingPerformanceRow,
-  type PostMetricsLookupRow,
   postingPerformance,
   postMetricsLookup,
-  type SocialOverviewParams,
-  type SocialOverviewRow,
   socialOverview,
-  type TopPostsParams,
-  type TopPostsRow,
   topPosts,
-} from "./endpoints";
+} from "./pipes/social";
 
 export function isTinybirdConfigured(): boolean {
   return Boolean(process.env.TINYBIRD_TOKEN);
@@ -104,7 +98,6 @@ function createTinybirdClient() {
       socialPosts,
       socialPostStats,
       socialPostSources,
-      geoMentionChecks,
       modelUsageShare,
       aiTrafficEvents,
       geoTrafficEvents,
@@ -117,13 +110,6 @@ function createTinybirdClient() {
       postingPerformance,
       notraAdoption,
       postMetricsLookup,
-      geoOverview,
-      geoTimeseries,
-      geoPromptResults,
-      geoCompetitorShare,
-      geoCompetitorTimeseries,
-      geoCompetitorPrompts,
-      geoLanguageShare,
       accountLeaderboard,
       modelUsageLatest,
       modelUsageTrend,
@@ -247,17 +233,6 @@ export function ingestSocialPostSources(
   );
 }
 
-export function ingestGeoMentionChecks(
-  rows: GeoMentionCheckRow[]
-): Promise<IngestResult | null> {
-  return ingestRows(
-    rows,
-    "geo",
-    rows.map((row) => row.organization_id),
-    (client, batch) => client.geoMentionChecks.ingestBatch(batch)
-  );
-}
-
 export function ingestModelUsageShare(
   rows: ModelUsageShareRow[]
 ): Promise<IngestResult | null> {
@@ -360,99 +335,6 @@ export function queryNotraAdoption(params: {
   );
 }
 
-export function queryGeoOverview(params: {
-  organization_id: string;
-  days?: number;
-}): Promise<QueryResult<GeoOverviewRow> | null> {
-  return cachedPipeQuery(
-    "geo",
-    "geo_overview",
-    params,
-    params.organization_id,
-    (client) => client.geoOverview.query(params)
-  );
-}
-
-export function queryGeoTimeseries(params: {
-  organization_id: string;
-  days?: number;
-}): Promise<QueryResult<GeoTimeseriesRow> | null> {
-  return cachedPipeQuery(
-    "geo",
-    "geo_timeseries",
-    params,
-    params.organization_id,
-    (client) => client.geoTimeseries.query(params)
-  );
-}
-
-export function queryGeoPromptResults(params: {
-  organization_id: string;
-}): Promise<QueryResult<GeoPromptResultsRow> | null> {
-  return cachedPipeQuery(
-    "geo",
-    "geo_prompt_results",
-    params,
-    params.organization_id,
-    (client) => client.geoPromptResults.query(params)
-  );
-}
-
-export function queryGeoCompetitorShare(params: {
-  organization_id: string;
-  days?: number;
-  limit?: number;
-}): Promise<QueryResult<GeoCompetitorShareRow> | null> {
-  return cachedPipeQuery(
-    "geo",
-    "geo_competitor_share",
-    params,
-    params.organization_id,
-    (client) => client.geoCompetitorShare.query(params)
-  );
-}
-
-export function queryGeoCompetitorTimeseries(params: {
-  organization_id: string;
-  brand: string;
-  days?: number;
-}): Promise<QueryResult<GeoCompetitorTimeseriesRow> | null> {
-  return cachedPipeQuery(
-    "geo",
-    "geo_competitor_timeseries",
-    params,
-    params.organization_id,
-    (client) => client.geoCompetitorTimeseries.query(params)
-  );
-}
-
-export function queryGeoCompetitorPrompts(params: {
-  organization_id: string;
-  brand: string;
-  days?: number;
-}): Promise<QueryResult<GeoCompetitorPromptsRow> | null> {
-  return cachedPipeQuery(
-    "geo",
-    "geo_competitor_prompts",
-    params,
-    params.organization_id,
-    (client) => client.geoCompetitorPrompts.query(params)
-  );
-}
-
-export function queryGeoLanguageShare(params: {
-  organization_id: string;
-  days?: number;
-}): Promise<QueryResult<GeoLanguageShareRow> | null> {
-  return cachedPipeQuery(
-    "geo",
-    "geo_language_share",
-    params,
-    params.organization_id,
-    (client) => client.geoLanguageShare.query(params)
-  );
-}
-
 export function queryAccountLeaderboard(
   params: AccountLeaderboardParams
 ): Promise<QueryResult<AccountLeaderboardRow> | null> {
@@ -544,10 +426,9 @@ export function queryAiTrafficLog(params: {
   );
 }
 
-export function queryGeoTrafficOverview(params: {
-  organization_id: string;
-  days?: number;
-}): Promise<QueryResult<GeoTrafficOverviewRow> | null> {
+export function queryGeoTrafficOverview(
+  params: InferParams<typeof geoTrafficOverview>
+): Promise<QueryResult<GeoTrafficOverviewRow> | null> {
   return cachedPipeQuery(
     "geo",
     "geo_traffic_overview",
@@ -557,10 +438,9 @@ export function queryGeoTrafficOverview(params: {
   );
 }
 
-export function queryGeoTrafficTimeseries(params: {
-  organization_id: string;
-  days?: number;
-}): Promise<QueryResult<GeoTrafficTimeseriesRow> | null> {
+export function queryGeoTrafficTimeseries(
+  params: InferParams<typeof geoTrafficTimeseries>
+): Promise<QueryResult<GeoTrafficTimeseriesRow> | null> {
   return cachedPipeQuery(
     "geo",
     "geo_traffic_timeseries",
@@ -594,11 +474,9 @@ export function queryGeoTrafficLog(
   );
 }
 
-export function queryGeoTrafficJourneys(params: {
-  organization_id: string;
-  days?: number;
-  limit?: number;
-}): Promise<QueryResult<GeoTrafficJourneysRow> | null> {
+export function queryGeoTrafficJourneys(
+  params: InferParams<typeof geoTrafficJourneys>
+): Promise<QueryResult<GeoTrafficJourneysRow> | null> {
   return cachedPipeQuery(
     "geo",
     "geo_traffic_journeys",
@@ -608,12 +486,9 @@ export function queryGeoTrafficJourneys(params: {
   );
 }
 
-export function queryGeoJourneyDetail(params: {
-  organization_id: string;
-  journey_id: string;
-  days?: number;
-  limit?: number;
-}): Promise<QueryResult<GeoJourneyDetailRow> | null> {
+export function queryGeoJourneyDetail(
+  params: InferParams<typeof geoJourneyDetail>
+): Promise<QueryResult<GeoJourneyDetailRow> | null> {
   return cachedPipeQuery(
     "geo",
     "geo_journey_detail",

@@ -5,7 +5,7 @@
 type: monorepo  
 langs: TypeScript, JavaScript  
 runtimes: Node.js 24.11.1, Bun  
-pkgManager: Bun 1.3.9  
+pkgManager: Bun 1.4.0  
 deliverables: web (Next.js marketing), dashboard (Next.js app), api (Hono/Workers), docs (Mint), shared libs  
 rootConfigs: `turbo.json`, `package.json`, `biome.jsonc`  
 
@@ -148,7 +148,7 @@ ci: `.github/workflows/code-quality.yml` → bun install, ultracite check on pus
 
 envFiles: `.env`, `.env.example`  
 
-envPrefixes: `DATABASE_URL`, `UPSTASH_REDIS_REST_*`, `GITHUB_CLIENT_*`, `GOOGLE_CLIENT_*`, `BETTER_AUTH_*`, `OPENROUTER_API_KEY`, `CONTEXT_DEV_API_KEY`, `RESEND_API_KEY`, `UNKEY_*`, `CLOUDFLARE_*`, `QSTASH_*`  
+envPrefixes: `DATABASE_URL`, `UPSTASH_REDIS_REST_*`, `GITHUB_CLIENT_*`, `GOOGLE_CLIENT_*`, `BETTER_AUTH_*`, `OPENROUTER_API_KEY`, `CONTEXT_DEV_API_KEY`, `RESEND_API_KEY`, `UNKEY_*`, `CLOUDFLARE_*`, `QSTASH_*`, `PERPLEXITY_API_KEY`, `CURSOR_API_KEY`
 
 ---
 

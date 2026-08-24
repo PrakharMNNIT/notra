@@ -8,7 +8,7 @@ platform). See `README.md` and `CONTRIBUTING.md` for the standard workflow and
 non-obvious, durable gotchas for working in the Cursor Cloud environment.
 
 ### Toolchain
-- Runtime/package manager is **Bun `1.3.9`** (installed at `~/.bun`); tooling uses
+- Runtime/package manager is **Bun `1.4.0`** (installed at `~/.bun`); tooling uses
   **Node `24.11.1`** (installed via `nvm`, set as the default alias). Both are baked
   into the VM snapshot and on `PATH` in a login shell. `bun install` is the startup
   update script — do not run it manually unless deps changed.
@@ -25,8 +25,12 @@ non-obvious, durable gotchas for working in the Cursor Cloud environment.
   `INTEGRATION_ENCRYPTION_KEY` (`openssl rand -base64 32`), and the
   `APP_URL` / `NEXT_PUBLIC_SITE_URL` / `NEXT_PUBLIC_APP_URL` = `http://localhost:3000`.
 - Most third-party keys are optional and degrade gracefully (Autumn billing, Resend,
-  Redis, R2, integrations). Content/chat **generation** needs a real
-  `AI_GATEWAY_API_KEY` or `OPENROUTER_API_KEY`; background jobs/schedules need Upstash
+  Redis, R2, integrations). GEO scanning picks up extra engines when their keys are
+  set: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `PERPLEXITY_API_KEY`, and
+  `CURSOR_API_KEY` (Cursor runs locally via `@cursor/sdk`, not through a gateway).
+  Content/chat **generation** needs a real
+  `AI_GATEWAY_API_KEY` and/or `OPENROUTER_API_KEY` — the model router picks the
+  gateway per organization plan; background jobs/schedules need Upstash
   Redis + QStash. `turbo.json` uses `envMode: "strict"`, so new env vars must be added
   to its `globalEnv` list to be visible to tasks.
 

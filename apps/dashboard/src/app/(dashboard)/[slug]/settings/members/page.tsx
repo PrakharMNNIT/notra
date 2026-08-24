@@ -11,7 +11,7 @@ import {
   TabsTrigger,
 } from "@notra/ui/components/ui/tabs";
 import { useQuery } from "@tanstack/react-query";
-import { use, useState } from "react";
+import { Suspense, use, useState } from "react";
 import { Button } from "@/components/button";
 import { PageContainer } from "@/components/layout/container";
 import { columns } from "@/components/members/columns";
@@ -20,12 +20,13 @@ import { invitationColumns } from "@/components/members/invitation-columns";
 import { InviteMemberModal } from "@/components/members/invite-member-modal";
 import { useOrganizationsContext } from "@/components/providers/organization-provider";
 import { authClient } from "@/lib/auth/client";
+import { DashboardPageSkeleton } from "../../skeleton";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
 }
 
-export default function MembersPage({ params }: PageProps) {
+function MembersPageContent({ params }: PageProps) {
   const { slug } = use(params);
   const { getOrganization, activeOrganization } = useOrganizationsContext();
   const organization =
@@ -81,7 +82,10 @@ export default function MembersPage({ params }: PageProps) {
 
   if (!organization) {
     return (
-      <PageContainer className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6">
+      <PageContainer
+        className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6"
+        variant="default"
+      >
         <div className="w-full space-y-6 px-4 lg:px-6">
           <div className="space-y-1">
             <Skeleton className="h-9 w-32" />
@@ -94,7 +98,10 @@ export default function MembersPage({ params }: PageProps) {
   }
 
   return (
-    <PageContainer className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6">
+    <PageContainer
+      className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6"
+      variant="default"
+    >
       <div className="w-full space-y-6 px-4 lg:px-6">
         <div className="flex items-start justify-between">
           <div className="space-y-1">
@@ -154,5 +161,13 @@ export default function MembersPage({ params }: PageProps) {
         organizationId={organization.id}
       />
     </PageContainer>
+  );
+}
+
+export default function MembersPage({ params }: PageProps) {
+  return (
+    <Suspense fallback={<DashboardPageSkeleton />}>
+      <MembersPageContent params={params} />
+    </Suspense>
   );
 }

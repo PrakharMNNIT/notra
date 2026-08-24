@@ -1,0 +1,153 @@
+"use client";
+
+import { PauseIcon, PlayIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@notra/ui/components/ui/dropdown-menu";
+import { type ReactNode, useState } from "react";
+import { CitationsTable } from "@/components/geo/citations-table";
+import { GeoTableSkeleton } from "@/components/geo/skeleton-parts";
+import {
+  InstrumentEmpty,
+  InstrumentSection,
+} from "@/components/instrument/instrument-module";
+import {
+  GEO_CITATIONS_LIVE_INTERVAL_MS,
+  GEO_TRAFFIC_LOG_PURPOSE_OPTIONS,
+  GEO_TRAFFIC_LOG_VISITOR_OPTIONS,
+} from "@/constants/geo";
+import { useGeoTrafficLog } from "@/lib/hooks/use-geo";
+import type { AiTrafficLogCardProps, GeoTrafficLogFilters } from "@/types/geo";
+import {
+  formatGeoTrafficFilterLabel,
+  toggleGeoTrafficFilterValue,
+} from "@/utils/ai-traffic";
+
+const TRAFFIC_LOG_HEIGHT = 416;
+const LOG_SKELETON_ROWS = 6;
+
+const FILTER_TRIGGER_CLASS =
+  "flex h-6 items-center gap-1 rounded-sm border border-border bg-background px-2 text-xs hover:bg-muted";
+
+export function AiTrafficLogCard({ organizationId }: AiTrafficLogCardProps) {
+  const [filters, setFilters] = useState<GeoTrafficLogFilters>({
+    visitorTypes: [],
+    categories: [],
+  });
+  const [live, setLive] = useState(true);
+  const { data, isPending } = useGeoTrafficLog(organizationId, filters, {
+    refetchInterval: live ? GEO_CITATIONS_LIVE_INTERVAL_MS : false,
+  });
+  const log = data?.log ?? [];
+  const total = data?.total ?? log.length;
+  let readout: string | undefined;
+  if (!isPending) {
+    readout =
+      total === 0 ? "no visits yet" : `${total.toLocaleString()} requests`;
+  }
+
+  let body: ReactNode;
+  if (isPending) {
+    body = <GeoTableSkeleton rows={LOG_SKELETON_ROWS} />;
+  } else if (log.length === 0) {
+    body = (
+      <InstrumentEmpty
+        message="No visits match these filters"
+        seed="geo-traffic-log"
+      />
+    );
+  } else {
+    body = <CitationsTable entries={log} height={TRAFFIC_LOG_HEIGHT} />;
+  }
+
+  const filterRow = (
+    <div className="flex items-center gap-2">
+      <DropdownMenu>
+        <DropdownMenuTrigger className={FILTER_TRIGGER_CLASS}>
+          {formatGeoTrafficFilterLabel(
+            "All visitors",
+            "visitors",
+            filters.visitorTypes,
+            GEO_TRAFFIC_LOG_VISITOR_OPTIONS
+          )}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-44">
+          {GEO_TRAFFIC_LOG_VISITOR_OPTIONS.map((option) => (
+            <DropdownMenuCheckboxItem
+              checked={filters.visitorTypes.includes(option.value)}
+              key={option.value}
+              onCheckedChange={() => {
+                setFilters((previous) => ({
+                  ...previous,
+                  visitorTypes: toggleGeoTrafficFilterValue(
+                    previous.visitorTypes,
+                    option.value
+                  ),
+                }));
+              }}
+            >
+              {option.label}
+            </DropdownMenuCheckboxItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <DropdownMenu>
+        <DropdownMenuTrigger className={FILTER_TRIGGER_CLASS}>
+          {formatGeoTrafficFilterLabel(
+            "All purposes",
+            "purposes",
+            filters.categories,
+            GEO_TRAFFIC_LOG_PURPOSE_OPTIONS
+          )}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-44">
+          {GEO_TRAFFIC_LOG_PURPOSE_OPTIONS.map((option) => (
+            <DropdownMenuCheckboxItem
+              checked={filters.categories.includes(option.value)}
+              key={option.value}
+              onCheckedChange={() => {
+                setFilters((previous) => ({
+                  ...previous,
+                  categories: toggleGeoTrafficFilterValue(
+                    previous.categories,
+                    option.value
+                  ),
+                }));
+              }}
+            >
+              {option.label}
+            </DropdownMenuCheckboxItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {total > 0 && (
+        <button
+          className={FILTER_TRIGGER_CLASS}
+          onClick={() => setLive((current) => !current)}
+          type="button"
+        >
+          <HugeiconsIcon
+            icon={live ? PauseIcon : PlayIcon}
+            size={12}
+            strokeWidth={2}
+          />
+          {live ? "Pause live updates" : "Resume live updates"}
+        </button>
+      )}
+    </div>
+  );
+
+  return (
+    <InstrumentSection
+      action={filterRow}
+      eyebrow="Recent citations"
+      readout={readout}
+    >
+      {body}
+    </InstrumentSection>
+  );
+}

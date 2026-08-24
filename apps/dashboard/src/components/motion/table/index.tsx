@@ -4,11 +4,10 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Checkbox } from "@/components/motion/checkbox";
 import { cn } from "@/lib/utils";
-import { EditableCell } from "./editable-cell";
 import { RowHandle } from "./row-handle";
 import { SkeletonRows } from "./skeleton-rows";
+import { TableBodyRow } from "./table-body-row";
 import { TableHeader } from "./table-header";
 import type { HeaderCellRefs, TableProps } from "./types";
 import { useColumnReorder } from "./use-column-reorder";
@@ -16,9 +15,13 @@ import { useColumnResize } from "./use-column-resize";
 import { useColumnSort } from "./use-column-sort";
 import { useRowSelection } from "./use-row-selection";
 import {
-  alignText,
   CHECKBOX_WIDTH,
-  readCell,
+  colWidthStyle,
+  DEFAULT_MIN_COLUMN_WIDTH,
+  headerMinWidth,
+  isFrWidth,
+  pinRowsFirst,
+  REORDER_HANDLE_PX,
   resolveColumnWidths,
 } from "./utils";
 
@@ -36,7 +39,7 @@ export function Table<T>({
   defaultSort = null,
   onSortChange,
   resizable = false,
-  minColumnWidth = 64,
+  minColumnWidth = DEFAULT_MIN_COLUMN_WIDTH,
   onColumnResize,
   reorderable = false,
   onColumnOrderChange,
@@ -48,12 +51,15 @@ export function Table<T>({
   onDeleteColumn,
   rowHeight = 48,
   height = 440,
+  minHeight,
   overscan = 10,
   onEndReached,
   loading = false,
   skeletonRows = 3,
   emptyState = "No data",
   onRowClick,
+  onRowPointerEnter,
+  isRowPinned,
   className,
 }: TableProps<T>) {
   "use no memo";
@@ -105,8 +111,13 @@ export function Table<T>({
       onSelectionChange,
     });
 
+  const displayRows = useMemo(
+    () => pinRowsFirst(sortedRows, isRowPinned),
+    [sortedRows, isRowPinned]
+  );
+
   const virtualizer = useVirtualizer({
-    count: sortedRows.length,
+    count: displayRows.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => rowHeight,
     overscan,
@@ -119,27 +130,60 @@ export function Table<T>({
   const paddingBottom = lastVirtualItem ? totalSize - lastVirtualItem.end : 0;
 
   const resolvedWidths = useMemo(
-    () => resolveColumnWidths(orderedColumns),
-    [orderedColumns]
+    () =>
+      resolveColumnWidths(orderedColumns, selectable ? [CHECKBOX_WIDTH] : []),
+    [orderedColumns, selectable]
+  );
+  const hasFlexibleColumn = orderedColumns.some(
+    (column) => widths[column.key] == null && isFrWidth(column.width)
   );
 
   const columnGroup = (
     <colgroup>
-      {selectable ? <col style={{ width: CHECKBOX_WIDTH }} /> : null}
+      {selectable ? (
+        <col style={{ width: CHECKBOX_WIDTH, minWidth: CHECKBOX_WIDTH }} />
+      ) : null}
       {orderedColumns.map((column, index) => {
         const override = widths[column.key];
         const width = override ? `${override}px` : resolvedWidths[index];
-        return <col key={column.key} style={width ? { width } : undefined} />;
+        const flexible = override == null && isFrWidth(column.width);
+        const minWidth = headerMinWidth(
+          column,
+          minColumnWidth,
+          reorderable ? REORDER_HANDLE_PX : 0
+        );
+        return (
+          <col
+            key={column.key}
+            style={colWidthStyle(width, flexible, minWidth)}
+          />
+        );
       })}
-      <col />
+      <col style={hasFlexibleColumn ? { width: 0 } : undefined} />
     </colgroup>
   );
-  const bodyHeight = Math.max(rowHeight, height - rowHeight);
+  const resolvedHeight = Math.max(height, minHeight ?? 0);
+  // Snap the body to a whole number of rows so separators land exactly on the
+  // bottom border instead of a partial row peeking out above it.
+  const bodyHeight =
+    Math.floor(Math.max(rowHeight, resolvedHeight - rowHeight) / rowHeight) *
+    rowHeight;
+  const minBodyHeight =
+    minHeight == null
+      ? 0
+      : Math.floor(Math.max(rowHeight, minHeight - rowHeight) / rowHeight) *
+        rowHeight;
   const contentHeight = Math.max(
     rowHeight,
     Math.min(bodyHeight, sortedRows.length * rowHeight)
   );
   const scrolls = sortedRows.length * rowHeight > bodyHeight;
+  const viewportHeight = scrolls
+    ? bodyHeight
+    : Math.max(
+        sortedRows.length === 0 ? bodyHeight : contentHeight,
+        minBodyHeight
+      );
 
   const hasRowMenu = !!(onInsertRow || onDeleteRow);
   const hasColumnMenu = !!(onInsertColumn || onDeleteColumn);
@@ -157,6 +201,27 @@ export function Table<T>({
       endReachedRef.current = false;
     }
   }, [loading]);
+  // A styled ::-webkit-scrollbar is a classic scrollbar: a horizontal one eats
+  // into the fixed viewport height, so rows no longer land on the rowHeight
+  // grid against the bottom border. Grow the container by its thickness.
+  const [hScrollbarPx, setHScrollbarPx] = useState(0);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) {
+      return;
+    }
+    const measure = () => {
+      const styles = getComputedStyle(el);
+      const borders =
+        Number.parseFloat(styles.borderTopWidth) +
+        Number.parseFloat(styles.borderBottomWidth);
+      setHScrollbarPx(Math.max(0, el.offsetHeight - el.clientHeight - borders));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) {
@@ -217,14 +282,10 @@ export function Table<T>({
   const leadColumns = columns.length + (selectable ? 1 : 0);
 
   return (
-    <div
-      className={cn(
-        "w-full overflow-hidden border border-border bg-background text-sm",
-        className
-      )}
-    >
+    <div className={cn("w-full text-sm", className)}>
+      {/* Overlap (>= rounded-2xl) hides the header's side border in the body radius. */}
       <div
-        className="overflow-hidden"
+        className="overflow-hidden rounded-t-2xl border border-border border-b-0 bg-muted pb-5"
         ref={headerScrollRef}
         style={scrolls ? { scrollbarGutter: "stable" } : undefined}
       >
@@ -242,6 +303,7 @@ export function Table<T>({
             columns={orderedColumns}
             dragKey={dragKey}
             dropIndex={dropIndex}
+            minColumnWidth={minColumnWidth}
             onColumnActivate={hasColumnMenu ? activateColumn : undefined}
             onColumnDeactivate={hasColumnMenu ? deactivateColumn : undefined}
             onColumnRename={onColumnRename}
@@ -269,15 +331,18 @@ export function Table<T>({
 
       <div
         className={cn(
-          "scrollbar-floating",
+          "-mt-5 scrollbar-floating relative box-content rounded-2xl border border-border bg-background outline-none",
           scrolls ? "overflow-auto" : "overflow-x-auto overflow-y-hidden"
         )}
         onScroll={handleScroll}
         ref={scrollRef}
         style={
           scrolls
-            ? { height: bodyHeight, scrollbarGutter: "stable" }
-            : { height: contentHeight }
+            ? {
+                height: viewportHeight + hScrollbarPx,
+                scrollbarGutter: "stable",
+              }
+            : { height: viewportHeight + hScrollbarPx }
         }
       >
         <table
@@ -317,82 +382,31 @@ export function Table<T>({
                   </tr>
                 ) : null}
                 {virtualItems.map((vItem) => {
-                  const entry = sortedRows[vItem.index];
+                  const entry = displayRows[vItem.index];
                   if (!entry) {
                     return null;
                   }
-                  const isSelected = selected.has(entry.id);
                   return (
-                    <tr
-                      className={cn(
-                        "border-border/60 border-b transition-colors",
-                        "data-[selected=true]:bg-primary/5",
-                        "hover:bg-muted/50",
-                        onRowClick && "cursor-pointer"
-                      )}
-                      data-selected={isSelected}
+                    <TableBodyRow
+                      columns={orderedColumns}
+                      entry={entry}
+                      hasRowMenu={hasRowMenu}
+                      index={vItem.index}
+                      isLastRow={vItem.index === displayRows.length - 1}
+                      isSelected={selected.has(entry.id)}
                       key={entry.id}
-                      onClick={
-                        onRowClick ? () => onRowClick(entry.row) : undefined
-                      }
-                      onKeyDown={
-                        onRowClick
-                          ? (event) => {
-                              if (event.key === "Enter" || event.key === " ") {
-                                event.preventDefault();
-                                onRowClick(entry.row);
-                              }
-                            }
-                          : undefined
-                      }
-                      onPointerEnter={
-                        hasRowMenu
-                          ? () => activateRow(entry.id, vItem.index)
-                          : undefined
-                      }
-                      onPointerLeave={hasRowMenu ? deactivateRow : undefined}
-                      ref={(el) => {
+                      onActivate={activateRow}
+                      onCellEdit={onCellEdit}
+                      onDeactivate={deactivateRow}
+                      onRowClick={onRowClick}
+                      onRowPointerEnter={onRowPointerEnter}
+                      onToggleRow={toggleRow}
+                      rowHeight={rowHeight}
+                      rowRef={(el) => {
                         rowRefs.current[entry.id] = el;
                       }}
-                      style={{ height: rowHeight }}
-                      tabIndex={onRowClick ? 0 : undefined}
-                    >
-                      {selectable ? (
-                        <td className="text-center">
-                          <div className="flex items-center justify-center">
-                            <Checkbox
-                              aria-label={`Select row ${vItem.index + 1}`}
-                              checked={isSelected}
-                              className="size-6"
-                              onCheckedChange={() => toggleRow(entry.id)}
-                            />
-                          </div>
-                        </td>
-                      ) : null}
-                      {orderedColumns.map((column) => (
-                        <td
-                          className={cn(
-                            "max-w-0 truncate px-4 text-foreground",
-                            "[&>*]:min-w-0 [&>*]:max-w-full",
-                            alignText(column.align)
-                          )}
-                          key={column.key}
-                        >
-                          {!column.cell && column.editable ? (
-                            <EditableCell
-                              label={`${column.key} for row ${vItem.index + 1}`}
-                              onChange={(next) =>
-                                onCellEdit?.(entry.id, column.key, next)
-                              }
-                              value={String(readCell(entry.row, column) ?? "")}
-                            />
-                          ) : (
-                            readCell(entry.row, column)
-                          )}
-                        </td>
-                      ))}
-                      <td aria-hidden />
-                    </tr>
+                      selectable={selectable}
+                    />
                   );
                 })}
                 {paddingBottom > 0 ? (

@@ -38,11 +38,11 @@ import {
 } from "@/components/evilcharts/ui/echarts-brush";
 import {
   buildChartCss,
-  type ChartConfig,
   flattenColor,
   getColorsCount,
   type ResolvedColors,
   resolveColors,
+  resolvedIndicatorBackground,
   seriesPaint,
   withAlpha,
 } from "@/components/evilcharts/ui/echarts-chart";
@@ -61,23 +61,22 @@ import {
   type TooltipPosition,
   type TooltipRoundness,
   type TooltipVariant,
+  composeTooltipBody,
+  configIndicatorHtml,
+  formatTooltipValue,
   tooltipBaseOption,
-  tooltipIndicatorHtml,
-  tooltipRow,
+  tooltipEmptyBody,
+  tooltipItemsFromRow,
   tooltipShell,
 } from "@/components/evilcharts/ui/echarts-tooltip";
-import type { ChartMarker } from "@/types/charts";
-
-// Re-export the shared types that were previously declared inline here, so
-// existing consumers/examples keep importing them from the chart module.
-export type {
+import type {
   ChartConfig,
-  DotVariant,
-  LegendVariant,
-  TooltipPosition,
-  TooltipRoundness,
-  TooltipVariant,
-};
+  ChartMarker,
+  TooltipBodyItem,
+  TooltipEmptyLabel,
+  TooltipLayout,
+  TooltipValueFormatter,
+} from "@/types/charts";
 
 // Modular registration keeps the bundle lean — only the pieces this chart needs.
 // `DataZoomComponent` bundles both the slider (brush footer) and inside (wheel/drag)
@@ -138,7 +137,7 @@ const BUFFER_DASH: [number, number] = [4, 3];
 // perceived intensity. Using the border token's full alpha lands both engines at
 // the same apparent brightness.
 const GRID_LINE_OPACITY = 1; // dashed y-axis split lines, × border alpha
-const AXIS_POINTER_OPACITY = 0.45; // tooltip cursor line alpha
+const AXIS_POINTER_OPACITY = 0.28; // tooltip cursor line alpha
 const AXIS_POINTER_WIDTH = 1; // tooltip cursor line thickness
 // The skeleton is CLIPPED to a small sweeping window — only the wave section
 // inside it exists (stroke + fill), everything outside is fully transparent,
@@ -272,7 +271,18 @@ export interface TooltipProps {
   roundness?: TooltipRoundness; // border-radius of the tooltip
   cursor?: boolean; // whether the vertical cursor line follows the pointer
   crosshair?: boolean; // also draw the horizontal line to the value axis
-  position?: TooltipPosition; // "variable" follows both axes (default); "fixed" pins the tooltip near the top and tracks the pointer's X
+  position?: TooltipPosition; // "variable" follows both axes (default); "fixed" pins the tooltip near the top and sits beside the pointer's X
+  layout?: TooltipLayout; // "rows" is the default swatch list; "bars" ranks series as a mini bar chart
+  valueFormatter?: TooltipValueFormatter;
+  barMax?: number; // bar layout: scale tracks to this ceiling (e.g. 100 for percents); omit to scale to the hovered max
+  confine?: boolean; // keep the tooltip inside the chart rect (default true); false lets small sparklines overflow
+  // When set, tooltip rows come from these data keys at the hovered index
+  // instead of the visible series — so a single total line can still list a
+  // per-engine breakdown on hover.
+  rowKeys?: readonly string[];
+  hideZeros?: boolean; // drop series whose hovered value is 0 / empty
+  excludeKeys?: readonly string[]; // series drawn on the chart but omitted from the tooltip
+  emptyLabel?: TooltipEmptyLabel; // shown when hideZeros / missing values leave no rows
 }
 
 /** Presence enables the hover tooltip. Renders nothing. */
@@ -329,6 +339,14 @@ type TooltipSlot = {
   cursor: boolean;
   crosshair?: boolean;
   position: TooltipPosition;
+  layout: TooltipLayout;
+  valueFormatter?: TooltipValueFormatter;
+  barMax?: number;
+  confine: boolean;
+  rowKeys?: readonly string[];
+  hideZeros: boolean;
+  excludeKeys: readonly string[];
+  emptyLabel?: TooltipEmptyLabel;
 };
 type LegendSlot = {
   present: boolean;
@@ -365,6 +383,10 @@ function collectConfig(children: ReactNode): CollectedConfig {
     roundness: "lg",
     cursor: true,
     position: "variable",
+    layout: "rows",
+    confine: true,
+    hideZeros: false,
+    excludeKeys: [],
   };
   let legend: LegendSlot = {
     present: false,
@@ -433,6 +455,14 @@ function collectConfig(children: ReactNode): CollectedConfig {
         cursor: props.cursor ?? true,
         crosshair: props.crosshair ?? false,
         position: props.position ?? "variable",
+        layout: props.layout ?? "rows",
+        valueFormatter: props.valueFormatter,
+        barMax: props.barMax,
+        confine: props.confine ?? true,
+        rowKeys: props.rowKeys,
+        hideZeros: props.hideZeros ?? false,
+        excludeKeys: props.excludeKeys ?? [],
+        emptyLabel: props.emptyLabel,
       };
     } else if (type === Legend) {
       const props = child.props as LegendProps;
@@ -956,75 +986,129 @@ function buildMainAxes(ctx: OptionBuildContext): {
 // Tooltip HTML builder, closed over the build context. `getHoveredKey` is read
 // per invocation — ECharts calls the formatter at hover time, and syncing hover
 // through an option push instead would reset the native blur state mid-hover.
+function tooltipBodyHtml(
+  items: readonly TooltipBodyItem[],
+  tooltipSlot: TooltipSlot,
+  row: Record<string, unknown> | undefined
+): string {
+  if (items.length > 0) {
+    return composeTooltipBody(items, tooltipSlot.layout, tooltipSlot.barMax);
+  }
+  const emptyLabel =
+    typeof tooltipSlot.emptyLabel === "function"
+      ? tooltipSlot.emptyLabel(row)
+      : (tooltipSlot.emptyLabel ?? "");
+  return emptyLabel.length > 0 ? tooltipEmptyBody(emptyLabel) : "";
+}
+
 function createTooltipFormatter(ctx: OptionBuildContext) {
-  const { config, selectedDataKey, tooltipSlot, getHoveredKey } = ctx;
+  const { config, data, selectedDataKey, tooltipSlot, getHoveredKey, resolved } =
+    ctx;
 
   return (params: unknown): string => {
     const rows = Array.isArray(params) ? params : [params];
     if (!rows.length) return "";
 
-    const first = rows[0] as { axisValue?: string | number; name?: string };
+    const first = rows[0] as {
+      axisValue?: string | number;
+      name?: string;
+      dataIndex?: number;
+    };
     // Label shows the RAW axis value — matches ChartTooltipContent (no tick formatter).
     const axisValue = first.axisValue ?? first.name ?? "";
     const label = String(axisValue);
+    const hoveredRow =
+      typeof first.dataIndex === "number" ? data[first.dataIndex] : undefined;
+    const rowKeys = tooltipSlot.rowKeys;
+    if (rowKeys && rowKeys.length > 0 && typeof first.dataIndex === "number") {
+      const items = tooltipItemsFromRow(
+        hoveredRow,
+        rowKeys,
+        config,
+        tooltipSlot.valueFormatter,
+        resolved.series
+      );
+      return tooltipShell({
+        label,
+        body: tooltipBodyHtml(items, tooltipSlot, hoveredRow),
+        roundness: tooltipSlot.roundness,
+        variant: tooltipSlot.variant,
+        layout: tooltipSlot.layout,
+      });
+    }
 
     // Dedupe by effective key: a buffer area contributes both its solid part
     // (id=key) and its dashed overlay (id=`__buffer-{key}`) at the shared
     // second-to-last point. Keep the first non-null value seen per key so the
     // final point (only the overlay has data there) still shows its number.
+    const excludedKeys = new Set(tooltipSlot.excludeKeys);
     const seen = new Set<string>();
-    const body = rows
-      .map((param) => {
-        const p = param as {
-          seriesId?: string;
-          seriesName?: string;
-          value?: number | string | null;
-        };
-        const rawId = String(p.seriesId ?? "");
-        // Map the dashed buffer overlay back onto its series; drop every other
-        // internal series (mini chart, loading skeleton, hover-reveal base).
-        const key = rawId.startsWith(BUFFER_PREFIX)
-          ? rawId.slice(BUFFER_PREFIX.length)
-          : rawId.startsWith("__")
+    const items: TooltipBodyItem[] = [];
+    for (const param of rows) {
+      const p = param as {
+        seriesId?: string;
+        seriesName?: string;
+        value?: number | string | null;
+      };
+      const rawId = String(p.seriesId ?? "");
+      // Map the dashed buffer overlay back onto its series; drop every other
+      // internal series (mini chart, loading skeleton, hover-reveal base).
+      const key = rawId.startsWith(BUFFER_PREFIX)
+        ? rawId.slice(BUFFER_PREFIX.length)
+        : rawId.startsWith("__")
+          ? ""
+          : (p.seriesId ?? p.seriesName ?? "");
+      if (!key || excludedKeys.has(key)) continue;
+      // A null value means this series does not reach the hovered x (a buffer
+      // area's solid part stops before the last point, a revealed series stops
+      // at the cursor) — skip it, letting another row for the key stand in.
+      if (p.value === null || p.value === undefined) continue;
+      const formatted = formatTooltipValue(
+        p.value,
+        tooltipSlot.valueFormatter
+      );
+      if (
+        tooltipSlot.hideZeros &&
+        (formatted.numeric === null || formatted.numeric <= 0)
+      ) {
+        continue;
+      }
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const item = config[key];
+      const colorsCount = item ? getColorsCount(item) : 1;
+      const labelText =
+        typeof item?.label === "string" ? item.label : (p.seriesName ?? key);
+      const hovered = getHoveredKey();
+      const dimmed =
+        selectedDataKey != null && selectedDataKey !== key
+          ? " opacity-30"
+          : tooltipSlot.layout === "bars"
             ? ""
-            : (p.seriesId ?? p.seriesName ?? "");
-        if (!key) return "";
-        // A null value means this series does not reach the hovered x (a buffer
-        // area's solid part stops before the last point, a revealed series stops
-        // at the cursor) — skip it, letting another row for the key stand in.
-        if (p.value === null || p.value === undefined) return "";
-        if (seen.has(key)) return "";
-        seen.add(key);
-
-        const item = config[key];
-        const colorsCount = item ? getColorsCount(item) : 1;
-        const labelText =
-          typeof item?.label === "string" ? item.label : (p.seriesName ?? key);
-        const hovered = getHoveredKey();
-        const dimmed =
-          (selectedDataKey != null && selectedDataKey !== key) ||
-          (hovered != null && hovered !== key)
-            ? " opacity-30"
-            : "";
-        const value =
-          typeof p.value === "number"
-            ? p.value.toLocaleString()
-            : String(p.value ?? "");
-
-        return tooltipRow({
-          indicatorHtml: tooltipIndicatorHtml(key, colorsCount),
-          labelText,
-          valueText: value,
-          dimmed,
-        });
-      })
-      .join("");
+            : hovered != null && hovered !== key
+              ? " opacity-30"
+              : "";
+      items.push({
+        key,
+        colorsCount,
+        labelText,
+        value: formatted.numeric,
+        valueText: formatted.text,
+        dimmed,
+        indicatorHtml: configIndicatorHtml(item),
+        paint: resolvedIndicatorBackground(
+          resolved.series[key] ?? ["rgba(120, 120, 120, 1)"]
+        ),
+      });
+    }
 
     return tooltipShell({
       label,
-      body,
+      body: tooltipBodyHtml(items, tooltipSlot, hoveredRow),
       roundness: tooltipSlot.roundness,
       variant: tooltipSlot.variant,
+      layout: tooltipSlot.layout,
     });
   };
 }
@@ -1042,6 +1126,7 @@ function buildTooltipOption(ctx: OptionBuildContext): TooltipComponentOption {
       position: tooltipSlot.position,
       axisPointerColor: withAlpha(tokens.mutedForeground, AXIS_POINTER_OPACITY),
       strokeWidth: AXIS_POINTER_WIDTH,
+      confine: tooltipSlot.confine,
     }),
     formatter: createTooltipFormatter(ctx),
   };
@@ -1237,6 +1322,7 @@ function buildAreaSeries(ctx: OptionBuildContext): LineSeriesOption[] {
       resolved.tokens.background
     );
     const restingVisible = area.dotVariant !== "none";
+    const hoverSymbol = area.activeDotVariant !== "none";
     const dotOpacity = opacity.dot;
     const multiColor = slots.length > 1;
 
@@ -1345,7 +1431,9 @@ function buildAreaSeries(ctx: OptionBuildContext): LineSeriesOption[] {
       // the line AND the filled area clickable, like the Recharts <Area>.
       // (`true` covers both; the deprecated `triggerLineEvent` did the same.)
       triggerEvent: area.isClickable,
-      showSymbol: restingVisible,
+      // Resting dots stay on the line; ActiveDot-only series keep symbols
+      // invisible until the axis pointer highlights the scrubbed index.
+      showSymbol: restingVisible || hoverSymbol,
       symbol: "circle",
       symbolSize: restingVisible ? restingDot.size : activeDot.size,
       z,
@@ -1357,10 +1445,10 @@ function buildAreaSeries(ctx: OptionBuildContext): LineSeriesOption[] {
         dashOffset: 0,
       },
       itemStyle: multiColor
-        ? { opacity: dotOpacity }
+        ? { opacity: restingVisible ? dotOpacity : hoverSymbol ? 0 : dotOpacity }
         : {
             ...(restingVisible ? restingDot.itemStyle : activeDot.itemStyle),
-            opacity: dotOpacity,
+            opacity: restingVisible ? dotOpacity : hoverSymbol ? 0 : dotOpacity,
           },
       areaStyle: {
         color: fillPaint(area.variant, showUnselected, slots, rendererSize),
@@ -1479,7 +1567,13 @@ function buildAreaSeries(ctx: OptionBuildContext): LineSeriesOption[] {
         lineStyle: { opacity: opacity.stroke },
         itemStyle: { opacity: dotOpacity },
       },
-      blur: { lineStyle: { opacity: 0.3 }, itemStyle: { opacity: 0.3 } },
+      // Stays at full stroke opacity on blur: this silent overlay belongs to
+      // its parent series, and the companion re-highlight dispatch can lag the
+      // native focus blur — a dimmed tail under a bright line reads as a bug.
+      blur: {
+        lineStyle: { opacity: opacity.stroke },
+        itemStyle: { opacity: dotOpacity },
+      },
     };
 
     // Fill patch — the main area drops its last point (so the tail stroke can be
@@ -2293,8 +2387,10 @@ export function EChartsAreaChart<TData extends Record<string, unknown>>({
         live.resolved?.tokens.background ?? "rgba(255, 255, 255, 1)"
       );
       Object.assign(merged, {
-        animation: withEntrance,
-        animationDuration: REVEAL_DURATION,
+        // Keep animation on so the hover cursor can ease between categories.
+        // Duration 0 still skips the intro draw-in when withEntrance is false.
+        animation: true,
+        animationDuration: withEntrance ? REVEAL_DURATION : 0,
         animationDurationUpdate: 0,
       });
       // chartOptions is an untyped escape hatch — the spread erases the option's

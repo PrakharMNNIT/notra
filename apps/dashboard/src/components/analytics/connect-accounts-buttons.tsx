@@ -16,7 +16,14 @@ import { Loader2Icon } from "lucide-react";
 import { Button } from "@/components/button";
 import { CONNECT_X_CLASS } from "@/constants/analytics";
 import { useHandleConnectSocialAccount } from "@/lib/hooks/use-connected-accounts";
+import { cn } from "@/lib/utils";
 import type { ConnectAccountsButtonsProps } from "@/types/analytics";
+
+const SPLIT_SHELL_CLASS =
+  "m-0 inline-flex min-w-0 items-stretch overflow-hidden border-0 bg-[#0f1419] p-0 shadow-[0px_0px_0px_2.5px_rgba(255,255,255,0.08)_inset] corner-squircle rounded-[1rem] supports-[corner-shape:round]:rounded-[1.25rem] dark:bg-white";
+
+const SPLIT_SEGMENT_CLASS =
+  "rounded-none shadow-none supports-[corner-shape:round]:rounded-none active:scale-100 focus-visible:z-10 focus-visible:ring-inset";
 
 export function ConnectAccountsButtons({
   organizationId,
@@ -25,9 +32,9 @@ export function ConnectAccountsButtons({
   const linkedin = useHandleConnectSocialAccount(organizationId, "linkedin");
 
   return (
-    <div className="inline-flex items-stretch">
+    <fieldset className={SPLIT_SHELL_CLASS}>
       <Button
-        className={`${CONNECT_X_CLASS} corner-squircle gap-2 rounded-r-none`}
+        className={cn(CONNECT_X_CLASS, SPLIT_SEGMENT_CLASS, "gap-2")}
         disabled={twitter.isPending}
         onClick={twitter.handleConnect}
       >
@@ -43,7 +50,11 @@ export function ConnectAccountsButtons({
           render={
             <Button
               aria-label="Connect another platform"
-              className={`${CONNECT_X_CLASS} corner-squircle rounded-l-none border-white/20 border-l px-2.5`}
+              className={cn(
+                CONNECT_X_CLASS,
+                SPLIT_SEGMENT_CLASS,
+                "border-white/20 border-l px-2.5! dark:border-black/15"
+              )}
             />
           }
         >
@@ -63,6 +74,6 @@ export function ConnectAccountsButtons({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-    </div>
+    </fieldset>
   );
 }

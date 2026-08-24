@@ -8,6 +8,7 @@
     "seed:brand-identity": "bun run src/scripts/seed-brand-identity.ts"
   },
   "exports": {
+    "./constants/*": "./src/constants/*.ts",
     "./drizzle": "./src/drizzle.ts",
     "./drizzle-http": "./src/drizzle-http.ts",
     "./schema": "./src/schema.ts",

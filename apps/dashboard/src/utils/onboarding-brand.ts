@@ -1,0 +1,38 @@
+import { GEO_PROMPT_MAX_LENGTH, GEO_PROMPT_MIN_LENGTH } from "@/constants/geo";
+import { ONBOARDING_VISIBILITY_MAX_PROMPTS } from "@/constants/onboarding";
+import { promptKey } from "@/lib/geo/prompt-key";
+import type { GeoDiscoveredPrompt, GeoOnboardingBrandInput } from "@/types/geo";
+import type { VisibilityBrandDraft } from "@/types/onboarding";
+
+export function uniqueVisibilityPrompts(
+  prompts: readonly GeoDiscoveredPrompt[]
+): GeoDiscoveredPrompt[] {
+  const seen = new Set<string>();
+  const unique: GeoDiscoveredPrompt[] = [];
+  for (const entry of prompts) {
+    const prompt = entry.prompt.trim();
+    const title = entry.title.trim();
+    const key = promptKey(prompt);
+    if (
+      prompt.length < GEO_PROMPT_MIN_LENGTH ||
+      prompt.length > GEO_PROMPT_MAX_LENGTH ||
+      title.length === 0 ||
+      seen.has(key)
+    ) {
+      continue;
+    }
+    seen.add(key);
+    unique.push({ prompt, title });
+  }
+  return unique.slice(0, ONBOARDING_VISIBILITY_MAX_PROMPTS);
+}
+
+export function toVisibilityBrandInput(
+  input: VisibilityBrandDraft
+): Omit<GeoOnboardingBrandInput, "organizationId" | "projectId"> {
+  return {
+    companyName: input.companyName.trim(),
+    aliases: input.aliases.map((alias) => alias.trim()).filter(Boolean),
+    prompts: uniqueVisibilityPrompts(input.prompts),
+  };
+}

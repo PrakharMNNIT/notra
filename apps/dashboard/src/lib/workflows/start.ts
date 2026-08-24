@@ -10,6 +10,11 @@ import {
 import { socialAnalyticsSyncPayloadSchema } from "@/schemas/analytics";
 import { brandGuidelinesWorkflowPayloadSchema } from "@/schemas/brand-guidelines";
 import {
+  geoOrganizationInputSchema,
+  geoWriterWorkflowPayloadSchema,
+} from "@/schemas/geo";
+import { gscSyncPayloadSchema } from "@/schemas/google-search-console";
+import {
   eventWorkflowPayloadSchema,
   scheduleWorkflowPayloadSchema,
 } from "@/schemas/workflows";
@@ -19,12 +24,17 @@ import {
 } from "@/schemas/workflows/iris";
 import { onboardingAgentWorkflowPayloadSchema } from "@/schemas/workflows/onboarding-agent-payload";
 import type { BrandAnalysisPayload } from "@/types/brand-analysis";
+import type { GeoWriterPayload } from "@/types/geo";
+import type { GscSyncPayload } from "@/types/google-search-console";
 import {
   brandAnalysisPayloadSchema,
   brandAnalysisWorkflow,
 } from "@/workflows/brand-analysis";
 import { brandGuidelinesWorkflow } from "@/workflows/brand-guidelines";
 import { eventContentWorkflow } from "@/workflows/event-content";
+import { geoScanWorkflow } from "@/workflows/geo-scan";
+import { geoWriterWorkflow } from "@/workflows/geo-writer";
+import { gscSyncWorkflow } from "@/workflows/gsc-sync";
 import { irisControllerRun } from "@/workflows/iris-controller";
 import { onDemandContentWorkflow } from "@/workflows/on-demand-content";
 import { onboardingAgentWorkflow } from "@/workflows/onboarding-agent";
@@ -113,6 +123,31 @@ export async function startSocialAnalyticsSyncRun(payload: {
 }): Promise<{ runId: string }> {
   const parsed = socialAnalyticsSyncPayloadSchema.parse(payload);
   const run = await start(socialAnalyticsSyncWorkflow, [parsed]);
+  return { runId: run.runId };
+}
+
+export async function startGeoScanRun(payload: {
+  organizationId: string;
+  projectId?: string;
+}): Promise<{ runId: string }> {
+  const parsed = geoOrganizationInputSchema.parse(payload);
+  const run = await start(geoScanWorkflow, [parsed]);
+  return { runId: run.runId };
+}
+
+export async function startGeoWriterRun(
+  payload: GeoWriterPayload
+): Promise<{ runId: string }> {
+  const parsed = geoWriterWorkflowPayloadSchema.parse(payload);
+  const run = await start(geoWriterWorkflow, [parsed]);
+  return { runId: run.runId };
+}
+
+export async function startGscSyncRun(
+  payload: GscSyncPayload
+): Promise<{ runId: string }> {
+  const parsed = gscSyncPayloadSchema.parse(payload);
+  const run = await start(gscSyncWorkflow, [parsed]);
   return { runId: run.runId };
 }
 

@@ -15,7 +15,9 @@ import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
 import { TablePlugin } from "@lexical/react/LexicalTablePlugin";
 import { HeadingNode, QuoteNode } from "@lexical/rich-text";
 import { TableCellNode, TableNode, TableRowNode } from "@lexical/table";
+import type { EditorThemeClasses } from "lexical";
 import { type RefObject, useCallback, useMemo, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 import type { TextSelection } from "@/schemas/content";
 import { editorTheme } from "./editor-theme";
 import { EDITOR_TRANSFORMERS } from "./markdown-transformers";
@@ -40,6 +42,9 @@ interface LexicalEditorProps {
   onSelectionChange: (selection: TextSelection | null) => void;
   editable?: boolean;
   editorRef?: RefObject<EditorRefHandle | null>;
+  theme?: EditorThemeClasses;
+  className?: string;
+  cleanReviewMarks?: boolean;
 }
 
 export function LexicalEditor({
@@ -48,6 +53,9 @@ export function LexicalEditor({
   onSelectionChange,
   editable = true,
   editorRef,
+  theme = editorTheme,
+  className,
+  cleanReviewMarks = false,
 }: LexicalEditorProps) {
   const isProgrammaticUpdateRef = useRef(false);
   const [floatingAnchorElem, setFloatingAnchorElem] =
@@ -79,14 +87,14 @@ export function LexicalEditor({
         TableRowNode,
         TableCellNode,
       ],
-      theme: editorTheme,
+      theme,
       editable,
       onError,
       editorState: () => {
         $convertFromMarkdownString(initialMarkdown, EDITOR_TRANSFORMERS);
       },
     }),
-    [initialMarkdown, editable, onError]
+    [initialMarkdown, editable, onError, theme]
   );
 
   const handleChange = useCallback(
@@ -104,9 +112,11 @@ export function LexicalEditor({
         <RichTextPlugin
           contentEditable={
             <ContentEditable
-              className={`min-h-[500px] px-8 outline-none ${
+              className={cn(
+                "outline-none",
+                className ?? "min-h-[500px] px-8",
                 editable ? "" : "cursor-default"
-              }`}
+              )}
             />
           }
           ErrorBoundary={LexicalErrorBoundary}
@@ -123,6 +133,7 @@ export function LexicalEditor({
         <ClickableLinkPlugin newTab />
         <TabFocusPlugin />
         <MarkdownSyncPlugin
+          cleanReviewMarks={cleanReviewMarks}
           onChange={handleChange}
           transformers={EDITOR_TRANSFORMERS}
         />

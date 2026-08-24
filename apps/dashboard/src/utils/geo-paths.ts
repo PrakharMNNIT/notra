@@ -1,0 +1,41 @@
+const GEO_DASHBOARD_PATH_PATTERN = /(?:^|\/)geo(?:\/|\?|$)/;
+
+export function geoDashboardPath(
+  organizationSlug: string,
+  projectId?: string
+): string {
+  const base = `/${organizationSlug}/geo`;
+  return withGeoProject(base, projectId);
+}
+
+export function withGeoProject(path: string, projectId?: string): string {
+  if (!projectId) {
+    return path;
+  }
+
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}project=${encodeURIComponent(projectId)}`;
+}
+
+export function isGeoDashboardPath(path: string): boolean {
+  return GEO_DASHBOARD_PATH_PATTERN.test(path);
+}
+
+export function geoNavHref(
+  organizationSlug: string,
+  link: string,
+  projectId?: string
+): string {
+  const path = `/${organizationSlug}${link}`;
+  return isGeoDashboardPath(path) ? withGeoProject(path, projectId) : path;
+}
+
+export function geoOnboardingPath(projectId?: string): string {
+  const base = "/onboarding/visibility";
+  return projectId ? `${base}?project=${encodeURIComponent(projectId)}` : base;
+}
+
+export function geoOnboardingCompetitorsPath(projectId?: string): string {
+  const base = "/onboarding/competitors";
+  return projectId ? `${base}?project=${encodeURIComponent(projectId)}` : base;
+}

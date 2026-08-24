@@ -17,12 +17,11 @@ import {
   BreadcrumbSeparator,
 } from "@notra/ui/components/ui/breadcrumb";
 import { Kbd, KbdGroup } from "@notra/ui/components/ui/kbd";
-import { SidebarTrigger } from "@notra/ui/components/ui/sidebar";
 import { useIsApplePlatform } from "@notra/ui/hooks/use-is-apple-platform";
 import { cn } from "@notra/ui/lib/utils";
 import { useHotkey } from "@tanstack/react-hotkeys";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useId, useRef } from "react";
 import { useCommandPalette } from "@/components/command-palette/command-palette-context";
 import { BrandTopbarIdentitySelector } from "@/components/dashboard/brand-topbar-identity-selector";
@@ -30,7 +29,12 @@ import { ChatTopbarTitle } from "@/components/dashboard/chat-topbar-title";
 import { ContentTopbarTitle } from "@/components/dashboard/content-topbar-title";
 import { useFeedback } from "@/components/dashboard/feedback-context";
 import { FeedbackForm } from "@/components/dashboard/feedback-popover";
+import { GeoTopbarProjectSwitcher } from "@/components/dashboard/geo-topbar-project-switcher";
 import { NavUser } from "@/components/dashboard/nav-user";
+import { SidebarToggle } from "@/components/dashboard/sidebar-toggle";
+import { GEO_DEFAULT_TAB, GEO_TAB_BREADCRUMB_LABELS } from "@/constants/geo";
+import { useGeoProjectQueryState } from "@/lib/hooks/use-geo-project-query";
+import { withGeoProject } from "@/utils/geo-paths";
 
 const NON_ORG_PATHS: string[] = [];
 
@@ -47,6 +51,8 @@ const SEGMENT_CONFIG: Record<string, { label?: string; href?: null }> = {
 export function SiteHeader() {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const [geoProjectParam] = useGeoProjectQueryState();
   const id = useId();
   const segments = pathname.split("/").filter(Boolean);
   const slug = segments[0];
@@ -129,7 +135,6 @@ export function SiteHeader() {
     !isNonOrgPath &&
     breadcrumbSegments[0] === "collection" &&
     breadcrumbSegments.length >= 2;
-  const collectionDetailId = isCollectionDetail ? breadcrumbSegments[1] : null;
   const isContentDetail =
     !isNonOrgPath &&
     breadcrumbSegments[0] === "content" &&
@@ -139,6 +144,7 @@ export function SiteHeader() {
     !isNonOrgPath &&
     breadcrumbSegments[0] === "brand" &&
     breadcrumbSegments[1] === "identity";
+  const isGeo = !isNonOrgPath && breadcrumbSegments[0] === "geo";
 
   const displayBreadcrumbSegments = isCollectionDetail
     ? ["content", "collection"]
@@ -237,29 +243,93 @@ export function SiteHeader() {
     }
   );
 
-  const breadcrumbs = isBrandIdentity
-    ? brandIdentityBreadcrumbs
-    : genericBreadcrumbs;
+  const geoSectionSegments = breadcrumbSegments.slice(1);
+  const geoProjectId = geoProjectParam ?? undefined;
+  const geoTabLabel =
+    GEO_TAB_BREADCRUMB_LABELS[searchParams.get("tab") ?? GEO_DEFAULT_TAB] ??
+    GEO_TAB_BREADCRUMB_LABELS[GEO_DEFAULT_TAB] ??
+    "Visibility";
+
+  const geoSectionBreadcrumbs =
+    geoSectionSegments.length > 0
+      ? geoSectionSegments.flatMap((segment, index) => {
+          const isLast = index === geoSectionSegments.length - 1;
+          const href = withGeoProject(
+            `/${segments.slice(0, index + 3).join("/")}`,
+            geoProjectId
+          );
+          const label =
+            segment.charAt(0).toUpperCase() +
+            segment.slice(1).replace(/-/g, " ");
+          return [
+            <BreadcrumbSeparator key={`${id}-geo-sep-${segment}`}>
+              <HugeiconsIcon icon={ArrowRight01Icon} />
+            </BreadcrumbSeparator>,
+            <BreadcrumbItem
+              className={cn(!isLast && "hover:underline")}
+              key={`${id}-geo-item-${segment}`}
+            >
+              {isLast ? (
+                <BreadcrumbPage>{label}</BreadcrumbPage>
+              ) : (
+                <BreadcrumbLink render={<Link href={href}>{label}</Link>} />
+              )}
+            </BreadcrumbItem>,
+          ];
+        })
+      : [
+          <BreadcrumbSeparator key={`${id}-geo-tab-sep`}>
+            <HugeiconsIcon icon={ArrowRight01Icon} />
+          </BreadcrumbSeparator>,
+          <BreadcrumbItem key={`${id}-geo-tab`}>
+            <BreadcrumbPage>{geoTabLabel}</BreadcrumbPage>
+          </BreadcrumbItem>,
+        ];
+
+  const geoBreadcrumbs = [
+    <BreadcrumbItem className="hover:underline" key={`${id}-geo-link`}>
+      <BreadcrumbLink
+        render={
+          <Link href={withGeoProject(`/${slug}/geo`, geoProjectId)}>Geo</Link>
+        }
+      />
+    </BreadcrumbItem>,
+    <GeoTopbarProjectSwitcher key={`${id}-geo-project-switcher`} />,
+    ...geoSectionBreadcrumbs,
+  ];
+
+  const breadcrumbs = (() => {
+    if (isBrandIdentity) {
+      return brandIdentityBreadcrumbs;
+    }
+    if (isGeo) {
+      return geoBreadcrumbs;
+    }
+    return genericBreadcrumbs;
+  })();
 
   return (
-    <header className="relative flex h-12 shrink-0 items-center gap-2 border-b bg-muted/30 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
-      <div className="flex h-full w-full items-center gap-1 px-4 lg:gap-2">
-        <div className="flex h-full min-w-0 flex-1 items-center gap-1 lg:gap-2">
-          <SidebarTrigger />
+    <header className="flex h-12 shrink-0 items-center gap-2 bg-muted transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
+      <div className="grid h-full w-full min-w-0 grid-cols-[minmax(8rem,1fr)_minmax(2rem,20rem)_minmax(2.5rem,1fr)] items-center gap-2 px-4 lg:gap-2">
+        <div className="flex h-full min-w-0 items-center gap-2 overflow-hidden">
+          <SidebarToggle className="-mx-1.5" />
           <Breadcrumb className="min-w-0">
-            <BreadcrumbList className="min-w-0 flex-nowrap">
+            <BreadcrumbList className="min-w-0 flex-nowrap gap-2">
               {breadcrumbs}
             </BreadcrumbList>
           </Breadcrumb>
         </div>
         <button
-          className="-translate-x-1/2 -translate-y-1/2 absolute top-1/2 left-1/2 hidden w-80 cursor-pointer items-center gap-2 rounded-lg border bg-background/60 px-3 py-1.5 text-muted-foreground text-sm transition-colors hover:bg-muted/60 md:flex"
+          aria-label="Search"
+          className="@container/search hidden h-8 w-full cursor-pointer items-center @[8rem]/search:justify-start justify-center gap-2 rounded-lg border bg-background/60 @[8rem]/search:px-3 px-2 text-muted-foreground text-sm transition-colors hover:bg-muted/60 md:flex"
           onClick={() => setCommandPaletteOpen(true)}
           type="button"
         >
-          <HugeiconsIcon icon={SearchIcon} size={16} />
-          <span className="flex-1 text-left">Search</span>
-          <KbdGroup>
+          <HugeiconsIcon className="shrink-0" icon={SearchIcon} size={16} />
+          <span className="@[8rem]/search:block hidden min-w-0 flex-1 truncate text-left">
+            Search
+          </span>
+          <KbdGroup className="@[14rem]/search:flex hidden shrink-0">
             <Kbd>{isApplePlatform ? "⌘" : "Ctrl"}</Kbd>
             <Kbd>K</Kbd>
           </KbdGroup>

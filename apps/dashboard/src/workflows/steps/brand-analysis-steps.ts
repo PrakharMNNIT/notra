@@ -17,17 +17,12 @@ import {
 import { isFinalStepAttempt } from "@/lib/workflows/step-errors";
 import { brandSettingsSchema, getValidLanguage } from "@/schemas/brand";
 import type { ExtractionResult } from "@/types/brand-analysis";
-import type { ProgressData } from "@/types/hooks/brand-analysis";
 import type {
   BrandAnalysisProgressInput,
   ExtractBrandInfoInput,
   SaveBrandSettingsInput,
 } from "@/types/workflows/brand-analysis";
-import {
-  getStepFromCurrentStep,
-  getStepFromStatus,
-  updateDefaultBrandSettings,
-} from "@/utils/brand-settings";
+import { updateDefaultBrandSettings } from "@/utils/brand-settings";
 
 export async function setBrandAnalysisProgress(
   input: BrandAnalysisProgressInput
@@ -55,7 +50,11 @@ export async function extractBrandInfo(
   const ai = createAILogger(log);
   try {
     const { output } = await generateText({
-      model: ai.wrap(gateway("anthropic/claude-sonnet-4.6")),
+      model: ai.wrap(
+        gateway("anthropic/claude-sonnet-4.6", {
+          organizationId: input.organizationId,
+        })
+      ),
       output: Output.object({ schema: brandSettingsSchema }),
       prompt: `Analyze this website content and extract brand identity information.
 

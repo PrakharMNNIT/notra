@@ -9,12 +9,12 @@ import {
 } from "@notra/ui/components/ui/tabs";
 import { TitleCard } from "@notra/ui/components/ui/title-card";
 import { parseAsStringLiteral, useQueryState } from "nuqs";
-import { useCallback, useRef } from "react";
-import { DiffView } from "@/components/content/diff-view";
+import { useCallback, useEffect, useRef } from "react";
 import { LexicalEditor } from "@/components/content/editor/lexical-editor";
+import { buildReviewMarkdown } from "@/utils/review-markdown";
 import type { ContentEditorProps } from "./types";
 
-const VIEW_OPTIONS = ["rendered", "markdown", "diff"] as const;
+const VIEW_OPTIONS = ["rendered", "markdown"] as const;
 type ViewOption = (typeof VIEW_OPTIONS)[number];
 
 const VIEW_OPTIONS_SET = new Set<string>(VIEW_OPTIONS);
@@ -27,8 +27,11 @@ export function ChangelogEditor({
   content,
   state,
   actions,
+  readOnly = false,
   editorRef,
   editorKey,
+  writeFocusNonce = 0,
+  reviewPreviousMarkdown = null,
 }: ContentEditorProps) {
   const [view, setView] = useQueryState(
     "view",
@@ -39,7 +42,17 @@ export function ChangelogEditor({
   const titleInputRef = useRef<HTMLInputElement>(null);
   const slugInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (writeFocusNonce === 0) {
+      return;
+    }
+    setView("rendered").catch(() => undefined);
+  }, [setView, writeFocusNonce]);
+
   const currentMarkdown = state.editedMarkdown ?? content.markdown ?? "";
+  const writeMarkdown = reviewPreviousMarkdown
+    ? buildReviewMarkdown(reviewPreviousMarkdown, currentMarkdown)
+    : currentMarkdown;
   const title = state.editingTitle ?? state.serverTitle;
   const slug = state.editingSlug ?? state.serverSlug ?? "";
   const showSlug = supportsPostSlug(content.contentType);
@@ -79,9 +92,10 @@ export function ChangelogEditor({
     <Tabs
       className="w-full"
       onValueChange={(value) => {
-        if (isViewOption(value)) {
-          setView(value);
+        if (!isViewOption(value)) {
+          return;
         }
+        setView(value);
       }}
       value={view}
     >
@@ -90,12 +104,6 @@ export function ChangelogEditor({
           <TabsList variant="line">
             <TabsTrigger value="rendered">Rendered</TabsTrigger>
             <TabsTrigger value="markdown">Markdown</TabsTrigger>
-            <TabsTrigger value="diff">
-              Diff
-              {state.hasChanges && (
-                <span className="ml-1.5 size-2 rounded-full bg-primary" />
-              )}
-            </TabsTrigger>
           </TabsList>
         }
         className={
@@ -125,6 +133,7 @@ export function ChangelogEditor({
                     titleInputRef.current?.blur();
                   }
                 }}
+                readOnly={readOnly}
                 ref={titleInputRef}
                 type="text"
                 value={title}
@@ -167,6 +176,7 @@ export function ChangelogEditor({
                     }
                   }}
                   placeholder="add-a-slug"
+                  readOnly={readOnly}
                   ref={slugInputRef}
                   type="text"
                   value={slug}
@@ -193,6 +203,7 @@ export function ChangelogEditor({
                   titleInputRef.current?.blur();
                 }
               }}
+              readOnly={readOnly}
               ref={titleInputRef}
               type="text"
               value={title}
@@ -204,15 +215,17 @@ export function ChangelogEditor({
           className="prose prose-neutral dark:prose-invert mt-0 max-w-none"
           value="rendered"
         >
-          {currentMarkdown && (
+          {currentMarkdown ? (
             <LexicalEditor
+              cleanReviewMarks={Boolean(reviewPreviousMarkdown)}
+              editable={!readOnly}
               editorRef={editorRef}
-              initialMarkdown={currentMarkdown}
+              initialMarkdown={writeMarkdown}
               key={editorKey}
               onChange={actions.onEditorChange}
               onSelectionChange={actions.onSelectionChange}
             />
-          )}
+          ) : null}
         </TabsContent>
         <TabsContent className="mt-0" value="markdown">
           <textarea
@@ -223,41 +236,10 @@ export function ChangelogEditor({
             }}
             onMouseUp={handleTextareaSelect}
             onSelect={handleTextareaSelect}
+            readOnly={readOnly}
             ref={textareaRef}
             value={currentMarkdown}
           />
-        </TabsContent>
-        <TabsContent className="mt-0 space-y-4" value="diff">
-          {state.hasTitleChanges && (
-            <div className="space-y-2">
-              <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
-                Title
-              </p>
-              <div className="grid grid-cols-2 gap-4 rounded-lg border p-3 text-sm">
-                <div className="min-w-0">
-                  <p className="mb-1 text-muted-foreground text-xs">Original</p>
-                  <p className="wrap-break-word rounded bg-red-500/10 px-2 py-1">
-                    {state.serverTitle}
-                  </p>
-                </div>
-                <div className="min-w-0">
-                  <p className="mb-1 text-muted-foreground text-xs">Current</p>
-                  <p className="wrap-break-word rounded bg-green-500/10 px-2 py-1">
-                    {title}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-          <div className="space-y-2">
-            <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
-              Content
-            </p>
-            <DiffView
-              currentMarkdown={currentMarkdown}
-              originalMarkdown={state.originalMarkdown}
-            />
-          </div>
         </TabsContent>
       </TitleCard>
     </Tabs>

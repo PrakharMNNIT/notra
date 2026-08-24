@@ -78,6 +78,7 @@ export default function PageClient({
             <div className="w-full max-w-[340px] sm:max-w-none" key={post.id}>
               <ContentCard
                 className="min-h-35"
+                contentSubtype={post.contentSubtype}
                 contentType={post.contentType as ContentType}
                 href={`/${organizationSlug}/content/${post.id}`}
                 id={post.id}
@@ -103,7 +104,10 @@ export default function PageClient({
     return (
       <EmptyState
         action={
-          <Button render={<Link href={`/${organizationSlug}/content`} />}>
+          <Button
+            nativeButton={false}
+            render={<Link href={`/${organizationSlug}/content`} />}
+          >
             View content
           </Button>
         }

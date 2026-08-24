@@ -10,7 +10,21 @@ import {
   TextIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { ContextItem, TextSelection } from "@notra/ai/types/chat";
+import {
+  chatSessionsListResponseSchema,
+  uiMessageSchema,
+} from "@notra/ai/schemas/chat";
+import type {
+  ChatSessionSummary,
+  ContextItem,
+  TextSelection,
+} from "@notra/ai/types/chat";
+import {
+  contentChatHistoryPath,
+  contentChatHistoryQueryKey,
+  contentChatSessionsPath,
+  contentChatSessionsQueryKey,
+} from "@notra/ai/utils/chat";
 import {
   Avatar,
   AvatarFallback,
@@ -27,19 +41,25 @@ import {
   DropdownMenuTrigger,
 } from "@notra/ui/components/ui/dropdown-menu";
 import { useSidebar } from "@notra/ui/components/ui/sidebar";
-import { XTwitter } from "@notra/ui/components/ui/svgs/twitter";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@notra/ui/components/ui/tooltip";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { DefaultChatTransport } from "ai";
-import { AnimatePresence, LazyMotion, m } from "motion/react";
+import { DefaultChatTransport, type UIMessage } from "ai";
+import { nanoid } from "nanoid";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import remend from "remend";
 import { toast } from "sonner";
+import { ChatQueue, type QueuedMessage } from "@/components/chat/chat-queue";
 import ChatInput from "@/components/chat-input";
 import { getContentTypeLabel } from "@/components/content/content-card";
 import { ContentChatActivityPanel } from "@/components/content/content-chat-activity-panel";
@@ -49,40 +69,44 @@ import { ImageExportTargetIcon } from "@/components/content/image-export-target-
 import { PostSocialButton } from "@/components/content/post-social-button";
 import { RecommendationsSection } from "@/components/content/recommendations-section";
 import { RightPanelPortal } from "@/components/dashboard/right-panel-portal";
+import { WriterExecute } from "@/components/geo/writer/writer-execute";
 import { useOrganizationsContext } from "@/components/providers/organization-provider";
 import {
+  ACTIVITY_PANEL_CLASSNAME,
+  ACTIVITY_PANEL_FRAME_CLASSNAME,
+  ACTIVITY_PANEL_OPEN_WIDTH_CLASSNAME,
   CONTENT_TITLE_REGEX,
   SAVE_BAR_SELECTOR,
 } from "@/constants/content-detail";
 import { IMAGE_EXPORT_TARGETS } from "@/constants/image-export";
 import { localStorageKeys } from "@/constants/storage";
-import { TWITTER_BRAND_COLOR } from "@/constants/twitter";
 import { emitAutumnRefresh } from "@/lib/billing/autumn-refresh";
 import {
   copyImageAsFigma,
   copyImageAsPaper,
   downloadImage,
 } from "@/lib/content/image-export";
+import { useGeoWriterBrief } from "@/lib/hooks/use-geo-writer";
 import { dashboardOrpc } from "@/lib/orpc/query";
 import { cn } from "@/lib/utils";
 import { sourceMetadataSchema } from "@/schemas/content";
+import type { ContentChatMessageMetadata } from "@/types/content/chat";
 import type { ContentDetailPageClientProps } from "@/types/content/detail";
 import type { ImageExportTarget } from "@/types/content/image-export";
-import type { BrandSettings } from "@/types/hooks/brand-analysis";
 import { getBrandFaviconUrl } from "@/utils/brand";
+import { getEditMarkdownDiff } from "@/utils/chat-document-diff";
+import { handleStandaloneChatError } from "@/utils/chat-error";
+import { snapshotContentChatAttachments } from "@/utils/content-chat-attachments";
 import { formatSnakeCaseLabel } from "@/utils/format";
+import { parseGeoWriterDraft } from "@/utils/geo-write-entry";
 import { getImageExportHtml, isHttpImageContent } from "@/utils/image-content";
 import {
   getImageExportTargetLabel,
   isImageExportTarget,
 } from "@/utils/image-export";
-
 import { shakeElements } from "@/utils/shake-element";
 import { useContent } from "../../../../../lib/hooks/use-content";
 import { ContentDetailSkeleton } from "./skeleton";
-
-const loadMotionFeatures = () =>
-  import("@/lib/motion-features").then((mod) => mod.default);
 
 function formatDate(date: Date): string {
   return new Intl.DateTimeFormat(undefined, {
@@ -136,6 +160,14 @@ export default function PageClient({
   const { state: sidebarState } = useSidebar();
   const queryClient = useQueryClient();
   const { data, isPending, error } = useContent(organizationId, contentId);
+  const geoWriterDraft = parseGeoWriterDraft(data?.content?.sourceMetadata);
+  const geoWriterBriefQuery = useGeoWriterBrief(
+    organizationId,
+    geoWriterDraft?.briefId ?? null
+  );
+  const isGeoWriterPlanLocked = Boolean(
+    geoWriterDraft && geoWriterBriefQuery.data?.status !== "completed"
+  );
   const { data: brandResponse } = useQuery(
     dashboardOrpc.brand.voices.list.queryOptions({
       input: { organizationId },
@@ -151,10 +183,21 @@ export default function PageClient({
   const [editorKey, setEditorKey] = useState(0);
   const [context, setContext] = useState<ContextItem[]>([]);
   const [chatInputValue, setChatInputValue] = useState("");
+  const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [chatIdToHydrate, setChatIdToHydrate] = useState<string | null>(null);
   const [imageExportTarget, setImageExportTarget] =
     useState<ImageExportTarget>("paper");
 
   const [isActivityPanelOpen, setIsActivityPanelOpen] = useState(false);
+  const [hasOpenedActivityPanel, setHasOpenedActivityPanel] = useState(false);
+  const [writeFocusNonce, setWriteFocusNonce] = useState(0);
+  const [reviewPreviousMarkdown, setReviewPreviousMarkdown] = useState<
+    string | null
+  >(null);
+  if (isActivityPanelOpen && !hasOpenedActivityPanel) {
+    setHasOpenedActivityPanel(true);
+  }
   const saveToastIdRef = useRef<string | number | null>(null);
   const editorRef = useRef<EditorRefHandle | null>(null);
   const imageExportRef = useRef<HTMLDivElement | null>(null);
@@ -231,6 +274,24 @@ export default function PageClient({
 
   const [isSaving, setIsSaving] = useState(false);
 
+  const handleGeoArticleReady = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: dashboardOrpc.content.get.queryKey({
+          input: { organizationId, contentId },
+        }),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: dashboardOrpc.content.list.key(),
+      }),
+    ]);
+    setEditedMarkdown(null);
+    setPersistedSlug(null);
+    setEditingTitle(null);
+    setEditingSlug(null);
+    setReviewPreviousMarkdown(null);
+  }, [contentId, organizationId, queryClient]);
+
   useEffect(() => {
     if (!hasChanges) {
       return;
@@ -279,6 +340,10 @@ export default function PageClient({
         setOriginalMarkdown(editedMarkdown);
         originalMarkdownRef.current = editedMarkdown;
       }
+      if (reviewPreviousMarkdown) {
+        setEditorKey((key) => key + 1);
+      }
+      setReviewPreviousMarkdown(null);
       setPersistedTitle(responseData.content?.title ?? title.trim());
       setEditingTitle(null);
       setPersistedSlug(responseData.content?.slug ?? null);
@@ -311,6 +376,7 @@ export default function PageClient({
     editingSlug,
     title,
     editedMarkdown,
+    reviewPreviousMarkdown,
     organizationId,
     contentId,
     queryClient,
@@ -322,6 +388,8 @@ export default function PageClient({
     editorRef.current?.setMarkdown(originalMarkdown);
     setEditingTitle(null);
     setEditingSlug(null);
+    setReviewPreviousMarkdown(null);
+    setEditorKey((key) => key + 1);
   }, [originalMarkdown]);
 
   const [isTogglingStatus, setIsTogglingStatus] = useState(false);
@@ -492,104 +560,211 @@ export default function PageClient({
     }
   }, []);
 
-  const contentType = data?.content?.contentType;
-
   const [chatError, setChatError] = useState<string | null>(null);
+  const drainQueueRef = useRef<() => void>(() => {
+    // Populated after dispatchContentEdit is defined below.
+  });
+  const isDrainingRef = useRef(false);
+  const wasStoppedByUserRef = useRef(false);
+  const queuedMessagesRef = useRef<QueuedMessage[]>([]);
+  const messagesRef = useRef<UIMessage[]>([]);
+  const isAgentBusyRef = useRef(false);
+  const processedToolCallsRef = useRef<Set<string>>(new Set());
 
-  const { messages, sendMessage, status } = useChat({
+  const contentChatSessionsQuery = useQuery<ChatSessionSummary[]>({
+    queryKey: contentChatSessionsQueryKey(organizationId, contentId),
+    queryFn: async () => {
+      const response = await fetch(
+        contentChatSessionsPath(organizationId, contentId)
+      );
+      if (!response.ok) {
+        throw new Error("Failed to load content chat sessions");
+      }
+      const parsed = chatSessionsListResponseSchema.safeParse(
+        await response.json()
+      );
+      if (!parsed.success) {
+        throw new Error("Invalid content chat sessions response");
+      }
+      return parsed.data.sessions ?? [];
+    },
+    staleTime: 60_000,
+  });
+  const contentChatSessions = contentChatSessionsQuery.data ?? [];
+  const contentChatHistoryQuery = useQuery<UIMessage[] | null>({
+    queryKey: contentChatHistoryQueryKey(
+      organizationId,
+      contentId,
+      activeChatId
+    ),
+    queryFn: async () => {
+      if (!activeChatId) {
+        return null;
+      }
+      const response = await fetch(
+        contentChatHistoryPath(organizationId, contentId, activeChatId)
+      );
+      if (!response.ok) {
+        throw new Error("Failed to load content chat history");
+      }
+      const payload = await response.json();
+      const parsed = uiMessageSchema.array().safeParse(payload?.messages);
+      if (!parsed.success) {
+        throw new Error("Invalid content chat history response");
+      }
+      return parsed.data;
+    },
+    enabled: Boolean(activeChatId && chatIdToHydrate === activeChatId),
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+
+  useEffect(() => {
+    if (activeChatId || contentChatSessionsQuery.isPending) {
+      return;
+    }
+    const latestChatId = contentChatSessionsQuery.data?.at(0)?.chatId;
+    setActiveChatId(latestChatId ?? crypto.randomUUID());
+    setChatIdToHydrate(latestChatId ?? null);
+  }, [
+    activeChatId,
+    contentChatSessionsQuery.data,
+    contentChatSessionsQuery.isPending,
+  ]);
+
+  const { messages, sendMessage, setMessages, status, stop } = useChat({
     transport: new DefaultChatTransport({
       api: `/api/organizations/${organizationId}/content/${contentId}/chat`,
     }),
     onFinish: () => {
       clearSelection();
       emitAutumnRefresh();
-    },
-    onError: (err) => {
-      console.error("Error editing content:", err);
-
-      const errorMessage = err.message || String(err);
-
-      if (
-        errorMessage.includes("USAGE_LIMIT_REACHED") ||
-        errorMessage.includes("Usage limit reached")
-      ) {
-        setChatError(
-          "You've used all your chat messages this month. Upgrade for more."
+      if (activeChatId) {
+        queryClient.setQueryData(
+          contentChatHistoryQueryKey(organizationId, contentId, activeChatId),
+          messagesRef.current
         );
+      }
+      queryClient
+        .invalidateQueries({
+          queryKey: contentChatSessionsQueryKey(organizationId, contentId),
+        })
+        .catch((invalidateError) => {
+          console.error(
+            "Failed to refresh content chat sessions",
+            invalidateError
+          );
+        });
+      isDrainingRef.current = false;
+      isAgentBusyRef.current = false;
+      if (wasStoppedByUserRef.current) {
+        wasStoppedByUserRef.current = false;
         return;
       }
-
-      try {
-        const errorData = JSON.parse(errorMessage);
-        if (errorData.code === "USAGE_LIMIT_REACHED") {
-          setChatError(
-            "You've used all your chat messages this month. Upgrade for more."
+      drainQueueRef.current();
+    },
+    onError: (err) => {
+      isDrainingRef.current = false;
+      isAgentBusyRef.current = false;
+      queryClient
+        .invalidateQueries({
+          queryKey: contentChatSessionsQueryKey(organizationId, contentId),
+        })
+        .catch((invalidateError) => {
+          console.error(
+            "Failed to refresh content chat sessions",
+            invalidateError
           );
-          return;
-        }
-      } catch {
-        // Ignore non-JSON error payloads.
-      }
+        });
+      queryClient
+        .invalidateQueries({
+          queryKey: contentChatHistoryQueryKey(
+            organizationId,
+            contentId,
+            activeChatId
+          ),
+        })
+        .catch((invalidateError) => {
+          console.error(
+            "Failed to refresh content chat history",
+            invalidateError
+          );
+        });
 
-      toast.error("Failed to edit content");
+      const { isUsageLimit } = handleStandaloneChatError(err, {
+        setChatError,
+      });
+      if (!isUsageLimit) {
+        toast.error("Failed to edit content");
+        drainQueueRef.current();
+      }
     },
   });
 
-  const currentToolStatus = (() => {
-    const toolNames: Record<string, string> = {
-      getMarkdown: "Reading document...",
-      editMarkdown: "Editing document...",
-      reviseImage: "Revising image...",
-      listAvailableSkills: "Checking skills...",
-      getSkillByName: "Loading skill...",
-    };
+  const isAgentBusy = status === "streaming" || status === "submitted";
+  useLayoutEffect(() => {
+    messagesRef.current = messages;
+    isAgentBusyRef.current = isAgentBusy;
+  }, [messages, isAgentBusy]);
 
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const message = messages[i];
-      if (message?.role === "assistant" && message.parts) {
-        for (let j = message.parts.length - 1; j >= 0; j--) {
-          const part = message.parts[j];
-          if (!part) {
-            continue;
-          }
-          if (part.type === "text" && part.text?.trim()) {
-            return part.text.trim();
-          }
-          if (part.type.startsWith("tool-")) {
-            const toolPart = part as { state: string };
-            const toolName = part.type.replace("tool-", "");
-            if (
-              toolPart.state === "input-streaming" ||
-              toolPart.state === "input-available"
-            ) {
-              return toolNames[toolName] || `Running ${toolName}...`;
-            }
-          }
+  useLayoutEffect(() => {
+    if (chatIdToHydrate !== activeChatId) {
+      return;
+    }
+    if (status === "submitted" || status === "streaming") {
+      return;
+    }
+    const history = contentChatHistoryQuery.data;
+    if (!history) {
+      return;
+    }
+
+    processedToolCallsRef.current.clear();
+    for (const message of history) {
+      for (const part of message.parts) {
+        if ("toolCallId" in part && typeof part.toolCallId === "string") {
+          processedToolCallsRef.current.add(part.toolCallId);
         }
       }
     }
-    return undefined;
-  })();
+    setMessages(history);
+    setChatIdToHydrate(null);
+  }, [
+    activeChatId,
+    chatIdToHydrate,
+    contentChatHistoryQuery.data,
+    setMessages,
+    status,
+  ]);
 
-  const completionMessage = useMemo(() => {
-    if (status === "streaming" || status === "submitted") {
-      return null;
-    }
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const message = messages[i];
-      if (message?.role === "assistant" && message.parts) {
-        for (let j = message.parts.length - 1; j >= 0; j--) {
-          const part = message.parts[j];
-          if (part?.type === "text" && part.text?.trim()) {
-            return part.text.trim();
-          }
-        }
+  const handleSelectChat = useCallback(
+    (chatId: string) => {
+      if (isAgentBusyRef.current || chatId === activeChatId) {
+        return;
       }
-    }
-    return null;
-  }, [messages, status]);
+      setQueuedMessages([]);
+      queuedMessagesRef.current = [];
+      processedToolCallsRef.current.clear();
+      setMessages([]);
+      setActiveChatId(chatId);
+      setChatIdToHydrate(chatId);
+    },
+    [activeChatId, setMessages]
+  );
 
-  const processedToolCallsRef = useRef<Set<string>>(new Set());
+  const handleNewChat = useCallback(() => {
+    if (isAgentBusyRef.current) {
+      return;
+    }
+    setQueuedMessages([]);
+    queuedMessagesRef.current = [];
+    setChatInputValue("");
+    processedToolCallsRef.current.clear();
+    setMessages([]);
+    setActiveChatId(crypto.randomUUID());
+    setChatIdToHydrate(null);
+  }, [setMessages]);
+
   const invalidateContentQueries = useCallback(
     () =>
       Promise.all([
@@ -606,83 +781,122 @@ export default function PageClient({
   );
 
   useEffect(() => {
-    for (const message of messages) {
-      if (message.role === "assistant" && message.parts) {
-        for (const part of message.parts) {
-          if (
-            part.type === "tool-editMarkdown" ||
-            part.type === "tool-reviseImage"
-          ) {
-            const toolPart = part as {
-              toolCallId: string;
-              state: string;
-              output?: {
-                markdown?: string;
-                status?: string;
-                updatedMarkdown?: string;
-              };
-            };
+    let lastAssistantMessage: (typeof messages)[number] | undefined;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message?.role === "assistant") {
+        lastAssistantMessage = message;
+        break;
+      }
+    }
+    if (!lastAssistantMessage?.parts) {
+      return;
+    }
 
-            if (processedToolCallsRef.current.has(toolPart.toolCallId)) {
-              continue;
-            }
+    for (const part of lastAssistantMessage.parts) {
+      if (
+        part.type !== "tool-editMarkdown" &&
+        part.type !== "tool-reviseImage"
+      ) {
+        continue;
+      }
 
-            if (
-              part.type === "tool-reviseImage" &&
-              toolPart.state === "output-available" &&
-              toolPart.output?.status === "updated"
-            ) {
-              processedToolCallsRef.current.add(toolPart.toolCallId);
-              invalidateContentQueries().catch((error) => {
-                console.error("Failed to refresh revised image content", error);
-              });
-              continue;
-            }
+      const toolPart = part as {
+        toolCallId: string;
+        state: string;
+        output?: {
+          markdown?: string;
+          status?: string;
+          updatedMarkdown?: string;
+        };
+      };
 
-            if (
-              toolPart.state === "output-available" &&
-              (toolPart.output?.updatedMarkdown || toolPart.output?.markdown)
-            ) {
-              processedToolCallsRef.current.add(toolPart.toolCallId);
-              const nextMarkdown =
-                toolPart.output.updatedMarkdown || toolPart.output.markdown;
-              if (!nextMarkdown) {
-                continue;
-              }
-              const fixedMarkdown =
-                part.type === "tool-reviseImage"
-                  ? nextMarkdown
-                  : remend(nextMarkdown);
-              console.log(
-                `[Tool] ${part.type} result applied, toolCallId=${toolPart.toolCallId}`
-              );
-              setEditedMarkdown(fixedMarkdown);
-              editedMarkdownRef.current = fixedMarkdown;
-              editorRef.current?.setMarkdown(fixedMarkdown);
-              invalidateContentQueries().catch((error) => {
-                console.error("Failed to refresh edited content", error);
-              });
-            }
-          }
+      if (processedToolCallsRef.current.has(toolPart.toolCallId)) {
+        continue;
+      }
+
+      if (
+        part.type === "tool-reviseImage" &&
+        toolPart.state === "output-available" &&
+        toolPart.output?.status === "updated"
+      ) {
+        processedToolCallsRef.current.add(toolPart.toolCallId);
+        invalidateContentQueries().catch((error) => {
+          console.error("Failed to refresh revised image content", error);
+        });
+        continue;
+      }
+
+      if (
+        toolPart.state === "output-available" &&
+        (toolPart.output?.updatedMarkdown || toolPart.output?.markdown)
+      ) {
+        processedToolCallsRef.current.add(toolPart.toolCallId);
+        const nextMarkdown =
+          toolPart.output.updatedMarkdown || toolPart.output.markdown;
+        if (!nextMarkdown) {
+          continue;
         }
+        const previousMarkdown =
+          getEditMarkdownDiff(toolPart.output)?.previousMarkdown ??
+          editedMarkdownRef.current ??
+          "";
+        const fixedMarkdown =
+          part.type === "tool-reviseImage"
+            ? nextMarkdown
+            : remend(nextMarkdown);
+        const reviewPrevious =
+          part.type === "tool-editMarkdown" && previousMarkdown
+            ? remend(previousMarkdown)
+            : previousMarkdown;
+        setEditedMarkdown(fixedMarkdown);
+        editedMarkdownRef.current = fixedMarkdown;
+        if (part.type === "tool-editMarkdown") {
+          setReviewPreviousMarkdown(
+            reviewPrevious && reviewPrevious !== fixedMarkdown
+              ? reviewPrevious
+              : null
+          );
+          setWriteFocusNonce((value) => value + 1);
+          setEditorKey((key) => key + 1);
+        } else {
+          editorRef.current?.setMarkdown(fixedMarkdown);
+        }
+        invalidateContentQueries().catch((error) => {
+          console.error("Failed to refresh edited content", error);
+        });
       }
     }
   }, [invalidateContentQueries, messages]);
 
-  const handleAiEdit = useCallback(
-    async (instruction: string) => {
-      setIsActivityPanelOpen(true);
+  const dispatchContentEdit = useCallback(
+    async (
+      instruction: string,
+      attachments: ContentChatMessageMetadata = {}
+    ) => {
+      if (!activeChatId) {
+        return;
+      }
+      const nextSelection = attachments.selection;
+      const nextContext = attachments.context ?? [];
       await sendMessage(
-        { text: instruction },
+        {
+          text: instruction,
+          metadata: snapshotContentChatAttachments(
+            nextSelection ?? null,
+            nextContext
+          ),
+        },
         {
           body: {
+            chatId: activeChatId,
             currentMarkdown:
               data?.content?.contentType === "image"
                 ? ""
                 : (editedMarkdown ?? data?.content?.markdown ?? ""),
             contentType: data?.content?.contentType,
-            selection: selection ?? undefined,
-            context,
+            selection: nextSelection,
+            context: nextContext,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           },
         }
@@ -690,13 +904,94 @@ export default function PageClient({
     },
     [
       sendMessage,
+      activeChatId,
       data?.content?.contentType,
       editedMarkdown,
       data?.content?.markdown,
-      selection,
-      context,
     ]
   );
+
+  const handleAiEdit = useCallback(
+    async (instruction: string) => {
+      setIsActivityPanelOpen(true);
+      const attachments = snapshotContentChatAttachments(selection, context);
+      if (isAgentBusyRef.current) {
+        const next = [
+          ...queuedMessagesRef.current,
+          {
+            id: nanoid(10),
+            text: instruction,
+            selection: attachments.selection,
+            context: attachments.context,
+          },
+        ];
+        queuedMessagesRef.current = next;
+        setQueuedMessages(next);
+        return;
+      }
+      wasStoppedByUserRef.current = false;
+      isAgentBusyRef.current = true;
+      await dispatchContentEdit(instruction, attachments);
+    },
+    [context, dispatchContentEdit, selection]
+  );
+
+  const handleStop = useCallback(() => {
+    wasStoppedByUserRef.current = true;
+    stop();
+  }, [stop]);
+
+  const handleRemoveQueued = useCallback((id: string) => {
+    const next = queuedMessagesRef.current.filter(
+      (message) => message.id !== id
+    );
+    queuedMessagesRef.current = next;
+    setQueuedMessages(next);
+  }, []);
+
+  const handleEditQueued = useCallback((message: QueuedMessage) => {
+    const next = queuedMessagesRef.current.filter(
+      (queued) => queued.id !== message.id
+    );
+    queuedMessagesRef.current = next;
+    setQueuedMessages(next);
+    setChatInputValue(message.text);
+    if (message.selection) {
+      setSelection(message.selection);
+    }
+    if (message.context?.length) {
+      setContext(message.context);
+    }
+  }, []);
+
+  const drainQueue = useCallback(() => {
+    if (isDrainingRef.current) {
+      return;
+    }
+    const queue = queuedMessagesRef.current;
+    const next = queue[0];
+    if (!next) {
+      return;
+    }
+
+    isDrainingRef.current = true;
+    queuedMessagesRef.current = queue.slice(1);
+    setQueuedMessages(queue.slice(1));
+    dispatchContentEdit(next.text, {
+      selection: next.selection,
+      context: next.context,
+    }).catch((error) => {
+      console.error("[Content] Failed to drain queued message:", error);
+      isDrainingRef.current = false;
+      const restored = [next, ...queuedMessagesRef.current];
+      queuedMessagesRef.current = restored;
+      setQueuedMessages(restored);
+    });
+  }, [dispatchContentEdit]);
+
+  useLayoutEffect(() => {
+    drainQueueRef.current = drainQueue;
+  }, [drainQueue]);
 
   const saveBarSection =
     hasChanges && isActivityPanelOpen ? (
@@ -724,27 +1019,46 @@ export default function PageClient({
       </div>
     ) : null;
 
-  const chatInputSection = (
-    <div
-      className={`fixed right-0 bottom-0 left-0 mx-auto w-full max-w-2xl px-4 pb-4 md:w-auto ${sidebarState === "collapsed" ? "md:left-14" : "md:left-64"} ${isActivityPanelOpen ? "lg:hidden" : ""}`}
-    >
+  const isChatDisabled =
+    isGeoWriterPlanLocked ||
+    !activeChatId ||
+    contentChatSessionsQuery.isPending ||
+    contentChatHistoryQuery.isFetching ||
+    contentChatHistoryQuery.isError;
+
+  const renderChatComposer = () => (
+    <>
+      <ChatQueue
+        messages={queuedMessages}
+        onEdit={handleEditQueued}
+        onRemove={handleRemoveQueued}
+      />
       <ChatInput
-        completionMessage={completionMessage}
+        connectedTop={queuedMessages.length > 0}
         context={context}
+        disabled={isChatDisabled}
         error={chatError}
-        isLoading={status === "streaming" || status === "submitted"}
+        isLoading={isAgentBusy}
         onAddContext={handleAddContext}
         onClearError={() => setChatError(null)}
         onClearSelection={clearSelection}
         onRemoveContext={handleRemoveContext}
         onSend={handleAiEdit}
+        onStop={handleStop}
         onValueChange={setChatInputValue}
         organizationId={organizationId}
         organizationSlug={organizationSlug}
         selection={selection}
-        statusText={currentToolStatus}
         value={chatInputValue}
       />
+    </>
+  );
+
+  const chatInputSection = (
+    <div
+      className={`fixed right-0 bottom-0 left-0 mx-auto w-full max-w-2xl px-4 pb-4 md:w-auto ${sidebarState === "collapsed" ? "md:left-14" : "md:left-64"} ${isActivityPanelOpen ? "lg:hidden" : ""}`}
+    >
+      {renderChatComposer()}
     </div>
   );
 
@@ -826,7 +1140,6 @@ export default function PageClient({
     ? `/${organizationSlug}/collection/${collection.id}`
     : `/${organizationSlug}/content`;
   const backLabel = collection ? "Back to collection" : "Back to Content";
-
   return (
     <>
       <div className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -838,281 +1151,312 @@ export default function PageClient({
             <HugeiconsIcon className="size-4" icon={ArrowLeft02Icon} />
             {backLabel}
           </Link>
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex flex-1 flex-col gap-1">
-              <div className="flex items-center gap-3">
-                <time
-                  className="text-muted-foreground text-sm"
-                  dateTime={content.date}
-                >
-                  {formatDate(new Date(content.date))}
-                </time>
-                <Badge className="capitalize" variant="secondary">
-                  {getContentTypeLabel(content.contentType)}
-                </Badge>
-                {content.contentType !== "image" && (
-                  <Badge
-                    className="capitalize"
-                    variant={
-                      content.status === "published" ? "default" : "outline"
-                    }
-                  >
-                    {content.status}
-                  </Badge>
+          <WriterExecute.Root
+            briefId={geoWriterDraft?.briefId ?? null}
+            hasUnsavedChanges={hasChanges}
+            onArticleReady={handleGeoArticleReady}
+            organizationId={organizationId}
+          >
+            {geoWriterDraft ? <WriterExecute.Banner /> : null}
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
+                {content.contentType === "blog_post" ? (
+                  <p className="text-muted-foreground text-sm">
+                    Blog post
+                    {content.status === "draft" ? (
+                      <>
+                        {" \u00B7 "}
+                        Draft
+                      </>
+                    ) : null}
+                  </p>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <time
+                      className="text-muted-foreground text-sm"
+                      dateTime={content.date}
+                    >
+                      {formatDate(new Date(content.date))}
+                    </time>
+                    <Badge className="capitalize" variant="secondary">
+                      {getContentTypeLabel(content.contentType)}
+                    </Badge>
+                    {content.contentType !== "image" && (
+                      <Badge
+                        className="capitalize"
+                        variant={
+                          content.status === "published" ? "default" : "outline"
+                        }
+                      >
+                        {content.status}
+                      </Badge>
+                    )}
+                  </div>
                 )}
-              </div>
-              {content.sourceMetadata &&
-                (() => {
-                  const parsed = sourceMetadataSchema.safeParse(
-                    content.sourceMetadata
-                  );
-                  if (!parsed.success || !parsed.data) {
-                    return null;
-                  }
-                  const meta = parsed.data;
-                  const repositories = meta.repositories ?? [];
-                  if (
-                    repositories.length === 0 ||
-                    !meta.triggerSourceType ||
-                    !meta.lookbackWindow ||
-                    !meta.lookbackRange
-                  ) {
-                    return null;
-                  }
-
-                  const triggerSourceType = meta.triggerSourceType;
-                  const lookbackWindow = meta.lookbackWindow;
-                  const lookbackRange = meta.lookbackRange;
-                  const repoLabel = formatRepos(repositories);
-                  const needsTooltip = repositories.length > 1;
-                  return (
-                    <p className="text-muted-foreground text-xs">
-                      <span className="capitalize">
-                        {formatTriggerType(triggerSourceType)}
-                      </span>
-                      {" \u00B7 "}
-                      {needsTooltip ? (
-                        <Tooltip>
-                          <TooltipTrigger
-                            render={
-                              <span className="cursor-help underline decoration-dotted underline-offset-2">
-                                {repoLabel}
-                              </span>
-                            }
-                          />
-                          <TooltipContent>
-                            <ul>
-                              {repositories.map((r) => (
-                                <li key={`${r.owner}/${r.repo}`}>
-                                  {r.owner}/{r.repo}
-                                </li>
-                              ))}
-                            </ul>
-                          </TooltipContent>
-                        </Tooltip>
-                      ) : (
-                        repoLabel
-                      )}
-                      {" \u00B7 "}
-                      <span className="capitalize">
-                        {formatLookbackWindow(lookbackWindow)}
-                      </span>{" "}
-                      ({formatDateRange(lookbackRange.start, lookbackRange.end)}
-                      )
-                      {meta.brandVoiceName &&
-                        (() => {
-                          const voice = meta.brandVoiceId
-                            ? brandResponse?.voices.find(
-                                (v) => v.id === meta.brandVoiceId
-                              )
-                            : brandResponse?.voices.find(
-                                (v) => v.name === meta.brandVoiceName
-                              );
-                          return (
-                            <>
-                              {" \u00B7 "}
-                              {voice ? (
-                                <Tooltip>
-                                  <TooltipTrigger
-                                    render={
-                                      <span className="cursor-help underline decoration-dotted underline-offset-2">
-                                        {meta.brandVoiceName}
-                                      </span>
-                                    }
-                                  />
-                                  <TooltipContent
-                                    className="flex items-start gap-3"
-                                    side="top"
-                                  >
-                                    <Avatar
-                                      className="mt-0.5 size-8 shrink-0 rounded-full after:rounded-full"
-                                      size="sm"
-                                    >
-                                      <AvatarImage
-                                        src={getBrandFaviconUrl(
-                                          voice.websiteUrl
-                                        )}
-                                      />
-                                      <AvatarFallback className="text-xs">
-                                        {voice.name.slice(0, 2).toUpperCase()}
-                                      </AvatarFallback>
-                                    </Avatar>
-                                    <div className="space-y-0.5">
-                                      <p className="font-medium">
-                                        {voice.name}
-                                      </p>
-                                      {voice.toneProfile && (
-                                        <p>Tone: {voice.toneProfile}</p>
-                                      )}
-                                      {voice.language && (
-                                        <p>Language: {voice.language}</p>
-                                      )}
-                                      {voice.companyName && (
-                                        <p>Company: {voice.companyName}</p>
-                                      )}
-                                    </div>
-                                  </TooltipContent>
-                                </Tooltip>
-                              ) : (
-                                meta.brandVoiceName
-                              )}
-                            </>
-                          );
-                        })()}
-                    </p>
-                  );
-                })()}
-            </div>
-            <div className="ml-auto flex shrink-0 items-center gap-2">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      className="hidden lg:inline-flex"
-                      onClick={() => setIsActivityPanelOpen((open) => !open)}
-                      size="icon-sm"
-                      variant={isActivityPanelOpen ? "secondary" : "outline"}
-                    />
-                  }
-                >
-                  <span className="sr-only">Toggle agent activity</span>
-                  <HugeiconsIcon className="size-4" icon={SidebarRight01Icon} />
-                </TooltipTrigger>
-                <TooltipContent>Agent activity</TooltipContent>
-              </Tooltip>
-              {content.contentType !== "image" && (
-                <Button
-                  disabled={isTogglingStatus}
-                  onClick={handleToggleStatus}
-                  size="sm"
-                  variant={content.status === "draft" ? "default" : "outline"}
-                >
-                  <HugeiconsIcon
-                    className="size-4"
-                    icon={content.status === "published" ? TextIcon : SentIcon}
-                  />
-                  {(() => {
-                    if (isTogglingStatus) {
-                      return "Updating...";
+                {content.sourceMetadata &&
+                  (() => {
+                    const parsed = sourceMetadataSchema.safeParse(
+                      content.sourceMetadata
+                    );
+                    if (!parsed.success || !parsed.data) {
+                      return null;
                     }
-                    return content.status === "published"
-                      ? "Move to draft"
-                      : "Publish";
+                    const meta = parsed.data;
+                    const repositories = meta.repositories ?? [];
+                    if (
+                      repositories.length === 0 ||
+                      !meta.triggerSourceType ||
+                      !meta.lookbackWindow ||
+                      !meta.lookbackRange
+                    ) {
+                      return null;
+                    }
+
+                    const triggerSourceType = meta.triggerSourceType;
+                    const lookbackWindow = meta.lookbackWindow;
+                    const lookbackRange = meta.lookbackRange;
+                    const repoLabel = formatRepos(repositories);
+                    const needsTooltip = repositories.length > 1;
+                    return (
+                      <p className="text-muted-foreground text-xs">
+                        <span className="capitalize">
+                          {formatTriggerType(triggerSourceType)}
+                        </span>
+                        {" \u00B7 "}
+                        {needsTooltip ? (
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={
+                                <span className="cursor-help underline decoration-dotted underline-offset-2">
+                                  {repoLabel}
+                                </span>
+                              }
+                            />
+                            <TooltipContent>
+                              <ul>
+                                {repositories.map((r) => (
+                                  <li key={`${r.owner}/${r.repo}`}>
+                                    {r.owner}/{r.repo}
+                                  </li>
+                                ))}
+                              </ul>
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          repoLabel
+                        )}
+                        {" \u00B7 "}
+                        <span className="capitalize">
+                          {formatLookbackWindow(lookbackWindow)}
+                        </span>{" "}
+                        (
+                        {formatDateRange(
+                          lookbackRange.start,
+                          lookbackRange.end
+                        )}
+                        )
+                        {meta.brandVoiceName &&
+                          (() => {
+                            const voice = meta.brandVoiceId
+                              ? brandResponse?.voices.find(
+                                  (v) => v.id === meta.brandVoiceId
+                                )
+                              : brandResponse?.voices.find(
+                                  (v) => v.name === meta.brandVoiceName
+                                );
+                            return (
+                              <>
+                                {" \u00B7 "}
+                                {voice ? (
+                                  <Tooltip>
+                                    <TooltipTrigger
+                                      render={
+                                        <span className="cursor-help underline decoration-dotted underline-offset-2">
+                                          {meta.brandVoiceName}
+                                        </span>
+                                      }
+                                    />
+                                    <TooltipContent
+                                      className="flex items-start gap-3"
+                                      side="top"
+                                    >
+                                      <Avatar
+                                        className="mt-0.5 size-8 shrink-0 rounded-full after:rounded-full"
+                                        size="sm"
+                                      >
+                                        <AvatarImage
+                                          src={getBrandFaviconUrl(
+                                            voice.websiteUrl
+                                          )}
+                                        />
+                                        <AvatarFallback className="text-xs">
+                                          {voice.name.slice(0, 2).toUpperCase()}
+                                        </AvatarFallback>
+                                      </Avatar>
+                                      <div className="space-y-0.5">
+                                        <p className="font-medium">
+                                          {voice.name}
+                                        </p>
+                                        {voice.toneProfile && (
+                                          <p>Tone: {voice.toneProfile}</p>
+                                        )}
+                                        {voice.language && (
+                                          <p>Language: {voice.language}</p>
+                                        )}
+                                        {voice.companyName && (
+                                          <p>Company: {voice.companyName}</p>
+                                        )}
+                                      </div>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                ) : (
+                                  meta.brandVoiceName
+                                )}
+                              </>
+                            );
+                          })()}
+                      </p>
+                    );
                   })()}
-                </Button>
-              )}
-              {content.contentType === "linkedin_post" && (
-                <PostSocialButton
-                  content={currentMarkdown}
-                  onContentChange={setEditedMarkdown}
-                  organizationId={organizationId}
-                  platform="linkedin"
-                />
-              )}
-              {content.contentType === "twitter_post" && (
-                <PostSocialButton
-                  content={currentMarkdown}
-                  onContentChange={setEditedMarkdown}
-                  organizationId={organizationId}
-                  platform="twitter"
-                />
-              )}
-              {content.contentType === "image" && (
-                <>
-                  <Button
-                    onClick={() => downloadImage(imageDownloadUrl, title)}
-                    size="sm"
-                    variant="outline"
+              </div>
+              <div className="ml-auto flex shrink-0 items-center gap-2">
+                {geoWriterDraft ? <WriterExecute.Button /> : null}
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        className="hidden lg:inline-flex"
+                        onClick={() => setIsActivityPanelOpen((open) => !open)}
+                        size="icon-sm"
+                        variant={isActivityPanelOpen ? "secondary" : "outline"}
+                      />
+                    }
                   >
-                    <HugeiconsIcon className="size-4" icon={Download01Icon} />
-                    Download image
+                    <span className="sr-only">Toggle Content Agent</span>
+                    <HugeiconsIcon
+                      className="size-4"
+                      icon={SidebarRight01Icon}
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent>Content Agent</TooltipContent>
+                </Tooltip>
+                {content.contentType !== "image" && (
+                  <Button
+                    disabled={isGeoWriterPlanLocked || isTogglingStatus}
+                    onClick={handleToggleStatus}
+                    size="sm"
+                    variant={content.status === "draft" ? "default" : "outline"}
+                  >
+                    {(() => {
+                      if (isTogglingStatus) {
+                        return "Updating...";
+                      }
+                      return content.status === "published"
+                        ? "Move to draft"
+                        : "Publish";
+                    })()}
+                    <HugeiconsIcon
+                      className="size-4"
+                      icon={
+                        content.status === "published" ? TextIcon : SentIcon
+                      }
+                    />
                   </Button>
-                  <ButtonGroup>
+                )}
+                {content.contentType === "linkedin_post" && (
+                  <PostSocialButton
+                    content={currentMarkdown}
+                    onContentChange={setEditedMarkdown}
+                    organizationId={organizationId}
+                    platform="linkedin"
+                  />
+                )}
+                {content.contentType === "twitter_post" && (
+                  <PostSocialButton
+                    content={currentMarkdown}
+                    onContentChange={setEditedMarkdown}
+                    organizationId={organizationId}
+                    platform="twitter"
+                  />
+                )}
+                {content.contentType === "image" && (
+                  <>
                     <Button
-                      onClick={handleCopyImageExport}
+                      onClick={() => downloadImage(imageDownloadUrl, title)}
                       size="sm"
                       variant="outline"
                     >
-                      <ImageExportTargetIcon
-                        className="size-4"
-                        target={imageExportTarget}
-                      />
-                      Copy for {getImageExportTargetLabel(imageExportTarget)}
+                      <HugeiconsIcon className="size-4" icon={Download01Icon} />
+                      Download image
                     </Button>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={<Button size="icon-sm" variant="outline" />}
+                    <ButtonGroup>
+                      <Button
+                        onClick={handleCopyImageExport}
+                        size="sm"
+                        variant="outline"
                       >
-                        <span className="sr-only">Select export target</span>
-                        <HugeiconsIcon
+                        <ImageExportTargetIcon
                           className="size-4"
-                          icon={ArrowDown01Icon}
+                          target={imageExportTarget}
                         />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-52">
-                        <DropdownMenuRadioGroup
-                          onValueChange={handleImageExportTargetSelect}
-                          value={imageExportTarget}
+                        Copy for {getImageExportTargetLabel(imageExportTarget)}
+                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={<Button size="icon-sm" variant="outline" />}
                         >
-                          {IMAGE_EXPORT_TARGETS.map((target) => {
-                            const isWonder = target === "wonder";
+                          <span className="sr-only">Select export target</span>
+                          <HugeiconsIcon
+                            className="size-4"
+                            icon={ArrowDown01Icon}
+                          />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-52">
+                          <DropdownMenuRadioGroup
+                            onValueChange={handleImageExportTargetSelect}
+                            value={imageExportTarget}
+                          >
+                            {IMAGE_EXPORT_TARGETS.map((target) => {
+                              const isWonder = target === "wonder";
 
-                            return (
-                              <DropdownMenuRadioItem
-                                className={cn(
-                                  "gap-2",
-                                  isWonder && "items-start"
-                                )}
-                                closeOnClick
-                                disabled={isWonder}
-                                key={target}
-                                value={target}
-                              >
-                                <ImageExportTargetIcon
-                                  className="mt-0.5 size-4"
-                                  target={target}
-                                />
-                                <span className="flex flex-col">
-                                  <span>
-                                    Copy for {getImageExportTargetLabel(target)}
-                                  </span>
-                                  {isWonder && (
-                                    <span className="text-muted-foreground text-xs">
-                                      Coming soon
-                                    </span>
+                              return (
+                                <DropdownMenuRadioItem
+                                  className={cn(
+                                    "gap-2",
+                                    isWonder && "items-start"
                                   )}
-                                </span>
-                              </DropdownMenuRadioItem>
-                            );
-                          })}
-                        </DropdownMenuRadioGroup>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </ButtonGroup>
-                </>
-              )}
+                                  closeOnClick
+                                  disabled={isWonder}
+                                  key={target}
+                                  value={target}
+                                >
+                                  <ImageExportTargetIcon
+                                    className="mt-0.5 size-4"
+                                    target={target}
+                                  />
+                                  <span className="flex flex-col">
+                                    <span>
+                                      Copy for{" "}
+                                      {getImageExportTargetLabel(target)}
+                                    </span>
+                                    {isWonder && (
+                                      <span className="text-muted-foreground text-xs">
+                                        Coming soon
+                                      </span>
+                                    )}
+                                  </span>
+                                </DropdownMenuRadioItem>
+                              );
+                            })}
+                          </DropdownMenuRadioGroup>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </ButtonGroup>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
+          </WriterExecute.Root>
 
           <ContentEditorSwitch
             actions={{
@@ -1138,6 +1482,7 @@ export default function PageClient({
               markdown: content.markdown,
               contentType: content.contentType,
               date: content.date,
+              status: content.status,
               sourceMetadata: content.sourceMetadata,
             }}
             contentType={content.contentType}
@@ -1149,6 +1494,8 @@ export default function PageClient({
               logo: activeOrganization?.logo ?? null,
             }}
             organizationId={organizationId}
+            readOnly={isGeoWriterPlanLocked}
+            reviewPreviousMarkdown={reviewPreviousMarkdown}
             state={{
               editedMarkdown,
               originalMarkdown,
@@ -1161,6 +1508,7 @@ export default function PageClient({
               hasTitleChanges,
               hasSlugChanges,
             }}
+            writeFocusNonce={writeFocusNonce}
           />
 
           <RecommendationsSection value={content.recommendations} />
@@ -1169,49 +1517,34 @@ export default function PageClient({
         </div>
       </div>
       <RightPanelPortal>
-        <LazyMotion features={loadMotionFeatures} strict>
-          <AnimatePresence initial={false}>
-            {isActivityPanelOpen && (
-              <m.aside
-                animate={{ opacity: 1, x: 0 }}
-                className="hidden min-h-0 w-96 shrink-0 overflow-hidden lg:block"
-                exit={{ opacity: 0, x: "100%" }}
-                initial={{ opacity: 0, x: "100%" }}
-                transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+        <aside
+          aria-hidden={!isActivityPanelOpen}
+          className={cn(
+            ACTIVITY_PANEL_CLASSNAME,
+            isActivityPanelOpen ? ACTIVITY_PANEL_OPEN_WIDTH_CLASSNAME : "w-0"
+          )}
+          inert={isActivityPanelOpen ? undefined : true}
+        >
+          {hasOpenedActivityPanel ? (
+            <div className={ACTIVITY_PANEL_FRAME_CLASSNAME}>
+              <ContentChatActivityPanel
+                activeChatId={activeChatId}
+                isHistoryLoading={
+                  contentChatSessionsQuery.isPending ||
+                  contentChatHistoryQuery.isFetching
+                }
+                messages={messages}
+                onClose={() => setIsActivityPanelOpen(false)}
+                onNewChat={handleNewChat}
+                onSelectChat={handleSelectChat}
+                sessions={contentChatSessions}
+                status={status}
               >
-                <div className="flex h-full min-h-0 w-96 flex-col">
-                  <div className="min-h-0 flex-1">
-                    <ContentChatActivityPanel
-                      messages={messages}
-                      onClose={() => setIsActivityPanelOpen(false)}
-                      status={status}
-                    />
-                  </div>
-                  <div className="shrink-0 p-2 pt-1">
-                    <ChatInput
-                      completionMessage={null}
-                      context={context}
-                      error={chatError}
-                      isLoading={
-                        status === "streaming" || status === "submitted"
-                      }
-                      onAddContext={handleAddContext}
-                      onClearError={() => setChatError(null)}
-                      onClearSelection={clearSelection}
-                      onRemoveContext={handleRemoveContext}
-                      onSend={handleAiEdit}
-                      onValueChange={setChatInputValue}
-                      organizationId={organizationId}
-                      organizationSlug={organizationSlug}
-                      selection={selection}
-                      value={chatInputValue}
-                    />
-                  </div>
-                </div>
-              </m.aside>
-            )}
-          </AnimatePresence>
-        </LazyMotion>
+                <div className="shrink-0 p-2 pt-1">{renderChatComposer()}</div>
+              </ContentChatActivityPanel>
+            </div>
+          ) : null}
+        </aside>
       </RightPanelPortal>
       {saveBarSection}
       {chatInputSection}

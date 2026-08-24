@@ -19,6 +19,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { commandRoutesForAI } from "@/components/command-palette/registry";
 import { getServerSession } from "@/lib/auth/session";
+import { hasAiCreditsGrant } from "@/lib/billing/subscription";
 import { getClientIp, ratelimit } from "@/utils/ratelimit";
 
 export const maxDuration = 15;
@@ -263,7 +264,10 @@ export async function POST(request: NextRequest) {
   }
 
   const organizationId = member.organizationId;
-  const routes = commandRoutesForAI(slug);
+  const hasAiCredits = await hasAiCreditsGrant(organizationId).catch(
+    () => false
+  );
+  const routes = commandRoutesForAI(slug, hasAiCredits);
 
   const entities = await fetchEntityContext(organizationId, query, slug);
 
@@ -274,7 +278,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const { object } = await generateObject({
-      model: gateway("anthropic/claude-sonnet-4.6"),
+      model: gateway("anthropic/claude-sonnet-4.6", { organizationId }),
       schema: resultSchema,
       system: [
         "You are a navigation router for the Notra dashboard command palette.",

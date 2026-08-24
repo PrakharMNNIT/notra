@@ -23,12 +23,13 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2Icon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { use, useState } from "react";
+import { Suspense, use, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/button";
 import { XVerificationBadge } from "@/components/icons/x-verification-badge";
 import { PageContainer } from "@/components/layout/container";
 import { useOrganizationsContext } from "@/components/providers/organization-provider";
+import { DevSampleDataCard } from "@/components/settings/dev-sample-data-card";
 import { OrganizationMembershipActionDialog } from "@/components/settings/organization-membership-action-dialog";
 import { authClient } from "@/lib/auth/client";
 import {
@@ -50,11 +51,10 @@ import type {
 import { setLastVisitedOrganization } from "@/utils/cookies";
 import { QUERY_KEYS } from "@/utils/query-keys";
 import { isSquareTwitterAvatar } from "@/utils/twitter";
+import { DashboardPageSkeleton } from "../../skeleton";
 import { OrganizationDetailsCard } from "./organization-details-card";
 
-export default function GeneralSettingsPage({
-  params,
-}: GeneralSettingsPageProps) {
+function GeneralSettingsPageContent({ params }: GeneralSettingsPageProps) {
   const { slug } = use(params);
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -147,7 +147,10 @@ export default function GeneralSettingsPage({
 
   if (!organization) {
     return (
-      <PageContainer className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6">
+      <PageContainer
+        className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6"
+        variant="default"
+      >
         <div className="w-full space-y-6 px-4 lg:px-6">
           <div className="space-y-1">
             <Skeleton className="h-9 w-48" />
@@ -160,7 +163,10 @@ export default function GeneralSettingsPage({
   }
 
   return (
-    <PageContainer className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6">
+    <PageContainer
+      className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6"
+      variant="default"
+    >
       <div className="w-full space-y-6 px-4 lg:px-6">
         <div className="space-y-1">
           <h1 className="font-bold text-3xl tracking-tight">General</h1>
@@ -172,6 +178,10 @@ export default function GeneralSettingsPage({
         <OrganizationDetailsCard organization={organization} slug={slug} />
 
         <ConnectedAccountsSection organizationId={organization.id} />
+
+        {process.env.NODE_ENV === "development" && (
+          <DevSampleDataCard organizationId={organization.id} />
+        )}
 
         <TitleCard heading="Danger Zone">
           <div className="space-y-4">
@@ -451,5 +461,15 @@ function ConnectedAccountsGroup({
         );
       })}
     </div>
+  );
+}
+
+export default function GeneralSettingsPage({
+  params,
+}: GeneralSettingsPageProps) {
+  return (
+    <Suspense fallback={<DashboardPageSkeleton />}>
+      <GeneralSettingsPageContent params={params} />
+    </Suspense>
   );
 }

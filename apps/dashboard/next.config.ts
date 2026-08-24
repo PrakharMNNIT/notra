@@ -4,14 +4,16 @@ import { withWorkflow } from "workflow/next";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
+  cacheComponents: true,
+  partialPrefetching: true,
   outputFileTracingIncludes: {
     "/*": ["./src/lib/ai/skills/**/*", "../../packages/ai/src/skills/**/*"],
   },
   experimental: {
     optimizePackageImports: ["@hugeicons/core-free-icons", "lucide-react"],
-    staleTimes: {
-      dynamic: 30,
-      static: 180,
+    hideLogsAfterAbort: true,
+    instantInsights: {
+      validationLevel: "manual-warning",
     },
   },
   turbopack: {
@@ -25,8 +27,9 @@ const nextConfig: NextConfig = {
     "@notra/content-generation",
     "@notra/kiwi",
     "@notra/utils",
+    "@usenotra/geo",
   ],
-  serverExternalPackages: ["@resvg/resvg-js"],
+  serverExternalPackages: ["@resvg/resvg-js", "@cursor/sdk"],
   async rewrites() {
     if (process.env.NODE_ENV === "production") {
       return [];
@@ -124,6 +127,10 @@ const nextConfig: NextConfig = {
       {
         protocol: "https",
         hostname: "media.brand.dev",
+      },
+      {
+        protocol: "https",
+        hostname: "models.dev",
       },
       {
         protocol: "https",

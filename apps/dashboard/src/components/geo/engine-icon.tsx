@@ -57,7 +57,15 @@ import type { EngineIconKey, EngineIconProps } from "@/types/geo";
 import { resolveEngineIconKey } from "@/utils/geo-engine-icon";
 import { modelsDevLogoUrl, splitModelId } from "@/utils/geo-model-display";
 
-export function EngineIcon({ engine, className }: EngineIconProps) {
+export function EngineIcon(props: EngineIconProps) {
+  return (
+    <span aria-hidden="true" className="contents">
+      <EngineIconGraphic {...props} />
+    </span>
+  );
+}
+
+function EngineIconGraphic({ engine, className }: EngineIconProps) {
   const key = resolveEngineIconKey(engine);
   if (!key) {
     const parsed = splitModelId(engine);

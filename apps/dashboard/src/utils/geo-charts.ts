@@ -160,35 +160,50 @@ export function listDaysThrough(firstDay: string, lastDay: string): string[] {
   return days;
 }
 
-function visibleEngineStats(
-  row: MentionTrendRow,
-  keys: readonly string[]
-): { total: number; count: number } | null {
-  let total = 0;
-  let count = 0;
-  for (const key of keys) {
-    const value = row[key];
-    if (typeof value === "number" && value > 0) {
-      total += value;
-      count += 1;
-    }
-  }
-  return count > 0 ? { total, count } : null;
-}
-
-function rowVisibleAverage(
-  row: MentionTrendRow,
-  keys: readonly string[]
-): number | null {
-  const stats = visibleEngineStats(row, keys);
-  return stats ? stats.total / stats.count : null;
-}
-
-export function fitMentionTrendAverage(
+export function fitMentionTrendLine(
   rows: readonly MentionTrendRow[],
-  keys: readonly string[]
+  key: string,
+  today = todayIsoDate()
 ): (number | null)[] {
-  return rows.map((row) => rowVisibleAverage(row, keys));
+  let count = 0;
+  let sumIndex = 0;
+  let sumValue = 0;
+  let sumProduct = 0;
+  let sumSquares = 0;
+  let firstIndex: number | null = null;
+  let lastObservedIndex: number | null = null;
+  for (const [index, row] of rows.entries()) {
+    const value = row[key];
+    if (typeof value !== "number") {
+      continue;
+    }
+    lastObservedIndex = index;
+    if (row.rawDay === today) {
+      continue;
+    }
+    count += 1;
+    sumIndex += index;
+    sumValue += value;
+    sumProduct += index * value;
+    sumSquares += index * index;
+    firstIndex ??= index;
+  }
+  if (count === 0 || firstIndex === null || lastObservedIndex === null) {
+    return rows.map(() => null);
+  }
+
+  const denominator = count * sumSquares - sumIndex * sumIndex;
+  const slope =
+    denominator === 0
+      ? 0
+      : (count * sumProduct - sumIndex * sumValue) / denominator;
+  const intercept = (sumValue - slope * sumIndex) / count;
+
+  return rows.map((_, index) =>
+    index >= firstIndex && index <= lastObservedIndex
+      ? Math.max(0, intercept + slope * index)
+      : null
+  );
 }
 
 export function mentionTrendEmptyLabel(

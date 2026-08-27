@@ -1754,6 +1754,7 @@ export interface GeoSectionSkeletonProps {
 
 export interface GeoTableSkeletonProps {
   rows: number;
+  toolbar?: ReactNode;
 }
 
 export interface GeoSettingsSkeletonSectionProps {

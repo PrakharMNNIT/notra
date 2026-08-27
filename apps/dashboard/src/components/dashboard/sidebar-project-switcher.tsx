@@ -113,16 +113,12 @@ export function SidebarProjectSwitcher() {
                   size="lg"
                   tooltip={activeProject.name}
                 >
-                  <div
-                    className="bg-background ring-foreground/10 flex size-8 shrink-0 items-center justify-center rounded-lg ring-1"
-                    data-slot="avatar"
-                  >
-                    <ProjectLogo
-                      className="size-5 rounded-sm"
-                      domain={activeDomain}
-                      name={activeProject.name}
-                    />
-                  </div>
+                  <ProjectLogo
+                    className="size-7 rounded-lg"
+                    domain={activeDomain}
+                    fallbackClassName="bg-background p-1 ring-1 ring-foreground/10"
+                    name={activeProject.name}
+                  />
                   <div className="grid min-w-0 flex-1 leading-tight">
                     <SidebarLabel className="truncate text-sm font-semibold">
                       {activeProject.name}

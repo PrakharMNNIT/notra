@@ -8,6 +8,7 @@ import { SubscriptionGate } from "@/components/billing/subscription-gate";
 import { DashboardSidebar } from "@/components/dashboard/app-sidebar";
 import { SiteHeader } from "@/components/dashboard/header";
 import { OnboardingAgentBanner } from "@/components/dashboard/onboarding-agent-banner";
+import { RestoreSidebarHome } from "@/components/dashboard/restore-sidebar-home";
 import { useOrganizationsContext } from "@/components/providers/organization-provider";
 import { EVE_BANNER_HEIGHT } from "@/constants/onboarding-agent";
 import { RIGHT_PANEL_PORTAL_ID } from "@/constants/right-panel";
@@ -86,6 +87,7 @@ export function DashboardShell({
           )}
         >
           <SiteHeader />
+          <RestoreSidebarHome />
           <div className="bg-muted flex min-h-0 flex-1 flex-col">
             <div className="scrollbar-stable scrollbar-floating border-sidebar-border bg-background @container/main -mx-px flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto overscroll-contain rounded-t-2xl border border-b-0">
               <SubscriptionGate>{children}</SubscriptionGate>

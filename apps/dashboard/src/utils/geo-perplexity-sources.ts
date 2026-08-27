@@ -1,5 +1,6 @@
 import type { PerplexitySearchSource } from "@notra/ui/components/brainless/perplexity/perplexity-search";
 
+import type { GeoAnswerSource } from "@/types/geo";
 import { getReferenceDomain } from "@/utils/reference-display";
 
 const MARKDOWN_LINK = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
@@ -33,4 +34,31 @@ export function perplexitySourcesFromExcerpt(
   }
 
   return sources;
+}
+
+export function perplexitySourcesFromStored(
+  sources: readonly GeoAnswerSource[]
+): PerplexitySearchSource[] {
+  return sources.flatMap((source) => {
+    const domain = getReferenceDomain(source.url);
+    if (!domain) {
+      return [];
+    }
+    return [
+      {
+        title: source.title?.trim() || domain,
+        domain,
+        url: source.url,
+        verified: true,
+      },
+    ];
+  });
+}
+
+export function perplexitySourcesFromStoredOrExcerpt(
+  sources: readonly GeoAnswerSource[],
+  excerpt: string
+): PerplexitySearchSource[] {
+  const stored = perplexitySourcesFromStored(sources);
+  return stored.length > 0 ? stored : perplexitySourcesFromExcerpt(excerpt);
 }

@@ -21,7 +21,6 @@ import type {
   MentionTrendRow,
   MentionTrendSeries,
 } from "@/types/geo";
-import { todayIsoDate } from "@/utils/analytics-charts";
 import { accountSeriesColors, seriesColors } from "@/utils/chart-colors";
 import { chartKey } from "@/utils/chart-keys";
 import {
@@ -51,14 +50,6 @@ function sampledDayCount(
   return rows.filter((row) =>
     engines.some((engine) => typeof row[chartKey(engine)] === "number")
   ).length;
-}
-
-function hasIncompleteTail(rows: readonly MentionTrendRow[]): boolean {
-  const last = rows.at(-1);
-  if (!last) {
-    return false;
-  }
-  return last.rawDay === todayIsoDate();
 }
 
 function toggleHiddenSeries(
@@ -130,7 +121,6 @@ export function MentionTrendCard({
     }
     return trendConfig;
   }, [series]);
-  const markIncompleteTail = hasIncompleteTail(rows);
   const sampledDays = sampledDayCount(rows, engines);
 
   const handleToggle = useCallback(
@@ -175,17 +165,17 @@ export function MentionTrendCard({
           data={chartRows}
           xDataKey="day"
         >
-          <EChartsAreaChart.Grid />
+          <EChartsAreaChart.Grid variant="solid" />
           <EChartsAreaChart.XAxis dataKey="day" />
           <EChartsAreaChart.YAxis />
-          {visibleSeries.map((entry) => (
+          {series.map((entry) => (
             <EChartsAreaChart.Area
               dataKey={entry.key}
-              enableBufferLine={markIncompleteTail}
               key={entry.key}
               strokeVariant="solid"
               strokeWidth={ENGINE_STROKE_WIDTH}
               variant="gradient"
+              visible={!effectiveHiddenKeys.has(entry.key)}
             >
               <EChartsAreaChart.ActiveDot variant="border" />
             </EChartsAreaChart.Area>
@@ -193,7 +183,7 @@ export function MentionTrendCard({
           <EChartsAreaChart.Area
             curveType="linear"
             dataKey={GEO_MENTION_TREND_AVERAGE_KEY}
-            strokeVariant="dashed"
+            strokeVariant="solid"
             strokeWidth={AVERAGE_STROKE_WIDTH}
             variant="none"
           />
@@ -205,6 +195,7 @@ export function MentionTrendCard({
             position="fixed"
             rowKeys={visibleKeys}
             valueFormatter={formatChartInteger}
+            variant="frosted-glass"
           />
         </EChartsAreaChart>
       )}

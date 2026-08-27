@@ -72,6 +72,8 @@ export interface GeoProjectLogoProps {
   name: string;
   domain: string | null;
   className?: string;
+  /** Applied only while the generated placeholder avatar is shown. */
+  fallbackClassName?: string;
 }
 
 export interface GeoPageClientProps {
@@ -202,8 +204,8 @@ export interface GeoPromptResult {
 }
 
 export interface PromptEngineSwitcherProps {
-  results: GeoPromptResult[];
-  active: GeoPromptResult;
+  results: readonly { engine: string }[];
+  active: { engine: string };
   onChange: (engine: string, direction: number) => void;
 }
 
@@ -217,9 +219,16 @@ export interface GeoCompetitorSharePoint {
   mentions: number;
 }
 
+export interface GeoCompetitorShareTimeseriesPoint {
+  brand: string;
+  day: string;
+  mentions: number;
+}
+
 export interface GeoCompetitorShareResponse {
   configured: boolean;
   points: GeoCompetitorSharePoint[];
+  timeseries: GeoCompetitorShareTimeseriesPoint[];
 }
 
 export interface GeoSettingsUpsertInput {
@@ -335,6 +344,11 @@ export interface GeoSequenceUpdateInput {
   enabled?: boolean;
 }
 
+export interface GeoAnswerSource {
+  url: string;
+  title: string | null;
+}
+
 export interface GeoSequenceTurnResult {
   sequenceId: string;
   turn: number;
@@ -345,7 +359,14 @@ export interface GeoSequenceTurnResult {
   position: number | null;
   sentiment: string | null;
   excerpt: string;
+  sources: GeoAnswerSource[];
   lastCheckedAt: string;
+}
+
+export interface GeoSequenceRunResponse {
+  checks: number;
+  mentions: number;
+  engines: string[];
 }
 
 export interface GeoSequenceResultsResponse {
@@ -374,6 +395,19 @@ export interface ConversationResultsDialogProps {
   onOpenChange: (open: boolean) => void;
   organizationId: string;
   sequence: GeoPromptSequence | null;
+  onRun: () => void;
+  isRunning: boolean;
+}
+
+export interface GeoSequenceEngineThread {
+  engine: string;
+  turns: GeoSequenceTurnResult[];
+}
+
+export interface ConversationReplayThreadProps {
+  engine: string;
+  turns: GeoSequenceTurnResult[];
+  playToken: number;
 }
 
 export interface GeoScanPayload {
@@ -599,6 +633,7 @@ export interface GeoTrafficSource {
   category: string;
   confidence: string;
   visits: number;
+  previousVisits?: number;
   markdownVisits: number;
   paths: number;
   lastSeenAt: string;
@@ -845,6 +880,8 @@ export interface GeoBarProps {
 export interface GeoRateSparklineProps {
   points: readonly GeoSparklinePoint[];
   className?: string;
+  ariaLabel?: string;
+  style?: React.CSSProperties;
 }
 
 export interface GeoPromptCoverage {
@@ -943,6 +980,7 @@ export interface GeoTabsProps {
   engines: GeoOverviewEngine[];
   timeseriesPoints: GeoTimeseriesPoint[];
   competitorPoints: GeoCompetitorSharePoint[];
+  competitorShareTimeseries?: readonly GeoCompetitorShareTimeseriesPoint[];
   competitors: GeoCompetitor[];
   languagePoints: GeoLanguageSharePoint[];
   promptResults: GeoPromptResult[];
@@ -1069,6 +1107,14 @@ export type EngineIconKey =
   | "cli";
 
 export type GeoChatSkin = "claude" | "chatgpt" | "gemini" | "perplexity";
+
+export interface GeoSkinMessageProps {
+  skin: GeoChatSkin;
+  from: "user" | "assistant";
+  search?: ReactNode;
+  actions?: ReactNode;
+  children: ReactNode;
+}
 
 export interface EngineIconProps {
   engine: string;
@@ -1237,6 +1283,7 @@ export interface ShareOfVoiceRow {
 
 export interface ShareOfVoiceCardProps {
   points: GeoCompetitorSharePoint[];
+  timeseries?: readonly GeoCompetitorShareTimeseriesPoint[];
   competitors?: GeoCompetitor[];
   action?: ReactNode;
   isScanning?: boolean;
@@ -1248,6 +1295,7 @@ export interface ShareOfVoiceCardProps {
 
 export interface ShareOfVoiceTableProps {
   points: GeoCompetitorSharePoint[];
+  timeseries?: readonly GeoCompetitorShareTimeseriesPoint[];
   competitors?: GeoCompetitor[];
   limit?: number;
   isScanning?: boolean;

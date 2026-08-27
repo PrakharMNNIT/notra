@@ -1,13 +1,17 @@
 "use client";
 
 import type { ContextItem, TextSelection } from "@notra/ai/types/chat";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, m, useReducedMotion } from "motion/react";
 
+import { MessageAuthorAvatar } from "@/components/chat/message-author-avatar";
 import { Composer } from "@/components/composer/composer-shell";
+import type { ChatMessageAuthor } from "@/types/chat";
+import { unknownChatMessageAuthor } from "@/utils/chat-message-author";
 
 export interface QueuedMessage {
   id: string;
   text: string;
+  authorUserId?: string;
   selection?: TextSelection;
   context?: ContextItem[];
 }
@@ -16,6 +20,8 @@ interface ChatQueueProps {
   messages: QueuedMessage[];
   onEdit: (message: QueuedMessage) => void;
   onRemove: (id: string) => void;
+  authorsById?: Map<string, ChatMessageAuthor>;
+  showAuthorAvatars?: boolean;
 }
 
 const INSTANT = { duration: 0 } as const;
@@ -27,7 +33,13 @@ const CONTAINER_SPRING = {
 } as const;
 const ITEM_SPRING = { type: "spring", stiffness: 420, damping: 32 } as const;
 
-export function ChatQueue({ messages, onEdit, onRemove }: ChatQueueProps) {
+export function ChatQueue({
+  messages,
+  onEdit,
+  onRemove,
+  authorsById,
+  showAuthorAvatars = false,
+}: ChatQueueProps) {
   const reduceMotion = useReducedMotion();
   const hasMessages = messages.length > 0;
   const containerTransition = reduceMotion ? INSTANT : CONTAINER_SPRING;
@@ -36,7 +48,7 @@ export function ChatQueue({ messages, onEdit, onRemove }: ChatQueueProps) {
   return (
     <AnimatePresence initial={false}>
       {hasMessages && (
-        <motion.div
+        <m.div
           animate={{ height: "auto", opacity: 1, y: 0 }}
           aria-label="Queued messages"
           className="border-border bg-muted overflow-hidden rounded-t-[14px] border border-b-0 px-2.5 pt-1.5 pb-1"
@@ -47,7 +59,7 @@ export function ChatQueue({ messages, onEdit, onRemove }: ChatQueueProps) {
           <div className="flex flex-wrap items-center gap-1.5">
             <AnimatePresence initial={false}>
               {messages.map((message) => (
-                <motion.div
+                <m.div
                   animate={{ opacity: 1, scale: 1 }}
                   className="max-w-full"
                   exit={{ opacity: 0, scale: 0.96 }}
@@ -58,16 +70,27 @@ export function ChatQueue({ messages, onEdit, onRemove }: ChatQueueProps) {
                 >
                   <Composer.Chip
                     editLabel="Edit queued message"
+                    icon={
+                      showAuthorAvatars && message.authorUserId ? (
+                        <MessageAuthorAvatar
+                          author={
+                            authorsById?.get(message.authorUserId) ??
+                            unknownChatMessageAuthor(message.authorUserId)
+                          }
+                          size="sm"
+                        />
+                      ) : undefined
+                    }
                     label={message.text}
                     onEdit={() => onEdit(message)}
                     onRemove={() => onRemove(message.id)}
                     removeLabel="Remove from queue"
                   />
-                </motion.div>
+                </m.div>
               ))}
             </AnimatePresence>
           </div>
-        </motion.div>
+        </m.div>
       )}
     </AnimatePresence>
   );

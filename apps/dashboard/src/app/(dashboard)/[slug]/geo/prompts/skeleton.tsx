@@ -34,8 +34,8 @@ export function GeoPromptsSkeleton() {
           <Skeleton className="h-9 w-full rounded-md sm:max-w-72" />
           <GeoTableSkeleton rows={PROMPT_ROW_COUNT} />
         </div>
-        <div>
-          <div className="border-border bg-muted flex items-start justify-between gap-3 rounded-t-2xl border border-b-0 px-6 pt-4 pb-9">
+        <div className="space-y-3">
+          <div className="flex items-start justify-between gap-3">
             <div className="space-y-1">
               <p className="text-sm font-semibold">Conversations</p>
               <p className="text-muted-foreground text-sm">
@@ -44,18 +44,7 @@ export function GeoPromptsSkeleton() {
             </div>
             <Skeleton className="h-8 w-36 rounded-lg" />
           </div>
-          <div className="border-border bg-card relative -mt-9 rounded-2xl border py-2">
-            <div className="divide-border/60 divide-y">
-              <div className="flex items-center justify-between gap-3 px-4 py-2.5">
-                <Skeleton className="h-4 w-2/5" />
-                <Skeleton className="h-4 w-16" />
-              </div>
-              <div className="flex items-center justify-between gap-3 px-4 py-2.5">
-                <Skeleton className="h-4 w-1/3" />
-                <Skeleton className="h-4 w-16" />
-              </div>
-            </div>
-          </div>
+          <GeoTableSkeleton rows={2} />
         </div>
       </div>
     </PageContainer>

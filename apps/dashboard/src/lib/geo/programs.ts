@@ -49,6 +49,7 @@ import {
   GeoSettingsDisabledError,
   GeoSettingsMissingError,
 } from "@/lib/geo/errors";
+import { geoHiddenSourceParams } from "@/lib/geo/hidden-sources";
 import {
   toGeoCompetitor,
   toGeoSettings,
@@ -651,12 +652,14 @@ export const loadAiTraffic = Effect.fn("geo.aiTraffic")(function* (
       geoQuery("traffic overview query failed", () =>
         queryGeoTrafficOverview({
           ...geoScopeParams(scope),
+          ...geoHiddenSourceParams(),
           ...windowParams,
         })
       ),
       geoQuery("traffic timeseries query failed", () =>
         queryGeoTrafficTimeseries({
           ...geoScopeParams(scope),
+          ...geoHiddenSourceParams(),
           ...windowParams,
         })
       ),
@@ -706,6 +709,7 @@ export const loadGeoTrafficLog = Effect.fn("geo.trafficLog")(function* (
   const rows = yield* geoQuery("traffic log query failed", () =>
     queryGeoTrafficLog({
       ...geoScopeParams(scope),
+      ...geoHiddenSourceParams(),
       limit: limit ?? AI_TRAFFIC_DEFAULT_LOG_LIMIT,
       visitor_type: visitorTypes?.join(",") ?? "",
       category: categories?.join(",") ?? "",
@@ -732,6 +736,7 @@ export const loadGeoTrafficJourneys = Effect.fn("geo.trafficJourneys")(
     const journeys = yield* geoQuery("traffic journeys query failed", () =>
       queryGeoTrafficJourneys({
         ...geoScopeParams(scope),
+        ...geoHiddenSourceParams(),
         ...geoTrafficWindowParams(window, AI_TRAFFIC_DEFAULT_DAYS),
         limit: limit ?? AI_TRAFFIC_DEFAULT_JOURNEYS_LIMIT,
       })
@@ -763,6 +768,7 @@ export const loadGeoJourneyDetail = Effect.fn("geo.journeyDetail")(function* (
   const detail = yield* geoQuery("journey detail query failed", () =>
     queryGeoJourneyDetail({
       ...geoScopeParams(scope),
+      ...geoHiddenSourceParams(),
       journey_id: journeyId,
       ...geoTrafficWindowParams(window, AI_TRAFFIC_DEFAULT_DAYS),
       limit: GEO_JOURNEY_DETAIL_LIMIT,
@@ -795,6 +801,7 @@ export const loadGeoTrafficPages = Effect.fn("geo.trafficPages")(function* (
   const pages = yield* geoQuery("traffic pages query failed", () =>
     queryGeoTrafficPages({
       ...geoScopeParams(scope),
+      ...geoHiddenSourceParams(),
       ...geoTrafficWindowParams(window, AI_TRAFFIC_DEFAULT_DAYS),
       limit: limit ?? AI_TRAFFIC_DEFAULT_PAGES_LIMIT,
       visitor: visitorType ?? "",

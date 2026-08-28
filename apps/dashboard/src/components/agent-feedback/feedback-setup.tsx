@@ -10,6 +10,7 @@ import { AgentFeedbackRotateButton } from "@/components/agent-feedback/feedback-
 import { ApiKeyRevealField } from "@/components/api-keys/api-key-reveal-field";
 import { Button } from "@/components/button";
 import { CodeSnippet, useCopyCode } from "@/components/geo/code-snippet";
+import { GeoPackageManagerIcon } from "@/components/geo/package-manager-icon";
 import {
   AGENT_FEEDBACK_DEFAULT_SNIPPET_TAB,
   AGENT_FEEDBACK_SNIPPET_FILENAMES,
@@ -33,6 +34,7 @@ export function AgentFeedbackSetup({
   setup,
   organizationId,
   className,
+  showPromptAction = true,
 }: AgentFeedbackSetupPanelProps) {
   const [snippetKey, setSnippetKey] = useState<AgentFeedbackSnippetKey>(
     AGENT_FEEDBACK_DEFAULT_SNIPPET_TAB
@@ -63,10 +65,12 @@ export function AgentFeedbackSetup({
             <TabsList aria-label="Package manager">
               {GEO_INGEST_PACKAGE_MANAGER_OPTIONS.map((option) => (
                 <TabsTrigger
-                  className="dark:data-active:bg-background px-2 text-xs"
+                  aria-label={option.label}
+                  className="gap-1 px-2 text-xs"
                   key={option.value}
                   value={option.value}
                 >
+                  <GeoPackageManagerIcon manager={option.value} />
                   {option.label}
                 </TabsTrigger>
               ))}
@@ -84,8 +88,11 @@ export function AgentFeedbackSetup({
           />
         </div>
         <p className="text-muted-foreground text-xs">
-          Add this as {AGENT_FEEDBACK_TOKEN_ENV} in your MCP server's
-          environment. It can only submit feedback.
+          Add this as{" "}
+          <code className="bg-muted text-foreground rounded-sm px-1.5 py-0.5 font-mono text-[0.6875rem]">
+            {AGENT_FEEDBACK_TOKEN_ENV}
+          </code>{" "}
+          in your MCP server's environment. It can only submit feedback.
         </p>
         {setup ? (
           <ApiKeyRevealField value={setup.token} />
@@ -110,7 +117,7 @@ export function AgentFeedbackSetup({
             <TabsList aria-label="Snippet">
               {AGENT_FEEDBACK_SNIPPET_TABS.map((item) => (
                 <TabsTrigger
-                  className="dark:data-active:bg-background px-2 text-xs"
+                  className="px-2 text-xs"
                   key={item.value}
                   value={item.value}
                 >
@@ -129,23 +136,25 @@ export function AgentFeedbackSetup({
           <Skeleton className="h-44 w-full rounded-lg" />
         )}
       </section>
-      <div className="space-y-2">
-        <div aria-hidden className="flex items-center gap-3 py-1">
-          <span className="bg-border/80 h-px flex-1" />
-          <span className="text-muted-foreground text-xs">or</span>
-          <span className="bg-border/80 h-px flex-1" />
+      {showPromptAction ? (
+        <div className="space-y-2">
+          <div aria-hidden className="flex items-center gap-3 py-1">
+            <span className="bg-border/80 h-px flex-1" />
+            <span className="text-muted-foreground text-xs">or</span>
+            <span className="bg-border/80 h-px flex-1" />
+          </div>
+          <Button
+            className="text-muted-foreground mx-auto flex w-fit"
+            disabled={!setup}
+            onClick={copy}
+            size="sm"
+            variant="ghost"
+          >
+            <HugeiconsIcon icon={copied ? Tick01Icon : AiMagicIcon} size={14} />
+            {copied ? "Prompt copied" : "Copy agent prompt"}
+          </Button>
         </div>
-        <Button
-          className="text-muted-foreground mx-auto flex w-fit"
-          disabled={!setup}
-          onClick={copy}
-          size="sm"
-          variant="ghost"
-        >
-          <HugeiconsIcon icon={copied ? Tick01Icon : AiMagicIcon} size={14} />
-          {copied ? "Prompt copied" : "Copy agent prompt"}
-        </Button>
-      </div>
+      ) : null}
     </div>
   );
 }

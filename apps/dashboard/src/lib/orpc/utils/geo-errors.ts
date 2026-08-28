@@ -4,8 +4,8 @@ import { badRequest, notFound, paymentRequired } from "@/lib/orpc/utils/errors";
 
 export function toGeoOrpcError(failure: GeoRouterError): Error {
   switch (failure._tag) {
-    case "GeoPromptCreateFailedError":
-      return badRequest("Failed to create prompt");
+    case "GeoPromptDuplicateError":
+      return badRequest("This prompt is already tracked");
     case "GeoPromptNotFoundError":
       return notFound("Prompt not found");
     case "GeoProjectNotFoundError":
@@ -27,6 +27,10 @@ export function toGeoOrpcError(failure: GeoRouterError): Error {
       return badRequest(failure.message);
     case "GeoSequenceCreateFailedError":
       return badRequest("Failed to create conversation");
+    case "GeoCompetitorLimitError":
+      return badRequest(
+        `You can track up to ${failure.limit} competitors. Remove some before importing more.`
+      );
     case "GeoSettingsMissingError":
       return badRequest("Configure your brand tracking settings first");
     case "GeoSettingsDisabledError":

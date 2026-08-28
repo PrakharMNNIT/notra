@@ -20,14 +20,26 @@ export class GeoDatabaseError extends Data.TaggedError("GeoDatabaseError")<{
   readonly cause: unknown;
 }> {}
 
-export class GeoPromptCreateFailedError extends Data.TaggedError(
-  "GeoPromptCreateFailedError"
-)<Record<string, never>> {}
+export class GeoCsvReadError extends Data.TaggedError("GeoCsvReadError")<{
+  readonly cause: unknown;
+}> {}
+
+export class GeoPromptDuplicateError extends Data.TaggedError(
+  "GeoPromptDuplicateError"
+)<{
+  readonly prompt: string;
+}> {}
 
 export class GeoPromptNotFoundError extends Data.TaggedError(
   "GeoPromptNotFoundError"
 )<{
   readonly promptId: string;
+}> {}
+
+export class GeoCompetitorLimitError extends Data.TaggedError(
+  "GeoCompetitorLimitError"
+)<{
+  readonly limit: number;
 }> {}
 
 export class GeoSettingsMissingError extends Data.TaggedError(
@@ -133,13 +145,14 @@ export class GeoWriterStartError extends Data.TaggedError(
 export type GeoRouterError =
   | GeoBrandIdentityMissingError
   | GeoBrandIdentityNotFoundError
+  | GeoCompetitorLimitError
   | GeoContentBriefNotFoundError
   | GeoContentBriefStateError
   | GeoDatabaseError
   | GeoDiscoveryError
   | GeoProjectCreateFailedError
   | GeoProjectNotFoundError
-  | GeoPromptCreateFailedError
+  | GeoPromptDuplicateError
   | GeoPromptNotFoundError
   | GeoSampleDataDisabledError
   | GeoScanStartError

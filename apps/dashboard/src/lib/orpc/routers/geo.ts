@@ -14,8 +14,8 @@ import {
 } from "@notra/ai/qstash/triggers";
 import { db } from "@notra/db/drizzle";
 import { geoPromptSuggestions, geoPrompts, projects } from "@notra/db/schema";
-import { and, asc, desc, eq } from "drizzle-orm";
-import type { Effect } from "effect";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { Effect } from "effect";
 
 import { GEO_SAMPLE_DATA_ENABLED } from "@/constants/geo";
 import {
@@ -48,6 +48,7 @@ import { assertAgentReadinessEnabled } from "@/lib/geo/agent-readiness-access";
 import { discoverGeoWebsite, generateGeoFromWebsite } from "@/lib/geo/discover";
 import type { GeoRouterError } from "@/lib/geo/errors";
 import { loadGeoContentGaps } from "@/lib/geo/gaps";
+import { lockGeoProject } from "@/lib/geo/lock";
 import { toTrackedPrompt } from "@/lib/geo/mappers";
 import { loadGeoModelCatalog } from "@/lib/geo/model-catalog";
 import {
@@ -59,6 +60,8 @@ import {
   createGeoPrompt,
   deleteGeoCompetitor,
   deleteGeoPrompt,
+  importGeoCompetitors,
+  importGeoPrompts,
   listGeoPrompts,
   loadAiTraffic,
   loadGeoCompetitorDetail,
@@ -83,6 +86,7 @@ import {
   listGeoProjects,
   requireGeoProject,
 } from "@/lib/geo/projects";
+import { promptKey } from "@/lib/geo/prompt-key";
 import { clearGeoSampleData, seedGeoSampleData } from "@/lib/geo/sample-data";
 import { runGeoSequenceNow } from "@/lib/geo/scan";
 import { syncGscSuggestions } from "@/lib/geo/search-console";
@@ -108,6 +112,7 @@ import {
   aiTrafficInputSchema,
   geoBrandSearchInputSchema,
   geoCompetitorDeleteInputSchema,
+  geoCompetitorsImportInputSchema,
   geoCompetitorDetailInputSchema,
   geoCompetitorSuggestionsInputSchema,
   geoCompetitorUpsertInputSchema,
@@ -118,6 +123,7 @@ import {
   geoOrganizationInputSchema,
   geoProjectCreateInputSchema,
   geoPromptCreateInputSchema,
+  geoPromptsImportInputSchema,
   geoPromptDeleteInputSchema,
   geoPromptToggleInputSchema,
   geoSequenceCreateInputSchema,
@@ -140,6 +146,7 @@ import type {
   AgentReadinessScanResponse,
 } from "@/types/agent-readiness";
 import type { AuthenticatedUser } from "@/types/auth/organization";
+import type { DbTransaction } from "@/types/db";
 import type {
   GeoBrandSearchHandlerInput,
   GeoCompetitorSuggestionsHandlerInput,
@@ -317,20 +324,19 @@ async function requireDefaultProjectId(
   return row.id;
 }
 
-type GeoTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
-
 async function acceptSuggestionInTx(
-  tx: GeoTransaction,
+  tx: DbTransaction,
   organizationId: string,
   projectId: string,
   suggestion: Pick<GeoPromptSuggestionRow, "id" | "prompt" | "title">
 ): Promise<GeoTrackedPrompt> {
+  await Effect.runPromise(lockGeoProject(tx, projectId));
   // Reuse an identical tracked prompt instead of creating a duplicate.
   const existing = await tx.query.geoPrompts.findFirst({
     where: and(
       eq(geoPrompts.organizationId, organizationId),
       eq(geoPrompts.projectId, projectId),
-      eq(geoPrompts.prompt, suggestion.prompt)
+      sql`lower(trim(${geoPrompts.prompt})) = ${promptKey(suggestion.prompt)}`
     ),
   });
   const promptRow =
@@ -396,6 +402,11 @@ export const geoRouter = {
   competitorDelete: authorizedProcedure
     .input(geoCompetitorDeleteInputSchema)
     .handler(geoOpenHandler((input) => deleteGeoCompetitor(input, input.name))),
+  competitorsImport: authorizedProcedure
+    .input(geoCompetitorsImportInputSchema)
+    .handler(
+      geoOpenHandler((input) => importGeoCompetitors(input, input.rows))
+    ),
   competitorDetail: authorizedProcedure
     .input(geoCompetitorDetailInputSchema)
     .handler(
@@ -523,6 +534,9 @@ export const geoRouter = {
     .handler(
       geoHandler((input) => createGeoPrompt(input, input.prompt, input.id))
     ),
+  promptsImport: authorizedProcedure
+    .input(geoPromptsImportInputSchema)
+    .handler(geoHandler((input) => importGeoPrompts(input, input.rows))),
   promptsDelete: authorizedProcedure
     .input(geoPromptDeleteInputSchema)
     .handler(

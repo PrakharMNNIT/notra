@@ -13,6 +13,7 @@ import { PurposeBadge } from "@/components/geo/purpose-badge";
 import { TrafficBreakdownCard } from "@/components/geo/traffic-breakdown-card";
 import { CountryFlag } from "@/components/geo/twemoji";
 import { Table, type TableColumn } from "@/components/motion/table";
+import { TablePagination } from "@/components/table-pagination";
 import { TruncateWithTooltip } from "@/components/truncate-with-tooltip";
 import {
   AI_TRAFFIC_PURPOSE_DESCRIPTIONS,
@@ -231,6 +232,7 @@ export function CitationsTable({
   entries,
   height,
   loading = false,
+  pagination,
 }: CitationsTableProps) {
   return (
     <Table
@@ -238,9 +240,17 @@ export function CitationsTable({
       columns={CITATIONS_COLUMNS}
       data={entries}
       defaultSort={CITATIONS_DEFAULT_SORT}
+      footer={
+        pagination ? (
+          <TablePagination {...pagination} itemLabel="requests" />
+        ) : undefined
+      }
       getRowId={citationRowId}
       height={height}
       loading={loading}
+      onSortChange={pagination ? () => pagination.setPage(1) : undefined}
+      page={pagination?.page}
+      pageSize={pagination?.pageSize}
       resizable
       rowHeight={GEO_CITATIONS_ROW_HEIGHT}
     />

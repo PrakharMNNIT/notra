@@ -17,16 +17,19 @@ import {
   InstrumentSection,
 } from "@/components/instrument/instrument-module";
 import { Table, type TableColumn } from "@/components/motion/table";
+import { TablePagination } from "@/components/table-pagination";
 import { CHART_PRIMARY_COLOR, CHART_SECONDARY_COLOR } from "@/constants/charts";
 import {
   GEO_EMPTY_TRAFFIC_RESPONSE,
   GEO_SPARKLINE_MIN_POINTS,
   GEO_TRAFFIC_TREND_CRAWLER_KEY,
   GEO_TRAFFIC_TREND_CRAWLER_LABEL,
+  GEO_TRAFFIC_SOURCES_PAGE_PARAM,
   GEO_TRAFFIC_TREND_REFERRAL_KEY,
   GEO_TRAFFIC_TREND_REFERRAL_LABEL,
 } from "@/constants/geo";
 import { TABLE_ROW_HEIGHT } from "@/constants/table";
+import { useTablePagination } from "@/lib/hooks/use-table-pagination";
 import { cn } from "@/lib/utils";
 import type { ChartConfig } from "@/types/charts";
 import type {
@@ -52,7 +55,7 @@ import {
 import { todayIsoDate } from "@/utils/analytics-charts";
 import { seriesColors } from "@/utils/chart-colors";
 import { formatChartInteger } from "@/utils/geo-charts";
-import { tableHeightFor } from "@/utils/table";
+import { paginatedTableHeightFor } from "@/utils/table";
 
 const HERO_CHART_OPTIONS = {
   grid: { left: 4, right: 8, top: 8, bottom: 4, containLabel: true },
@@ -217,6 +220,11 @@ export function AiTrafficCard({ traffic }: AiTrafficCardProps) {
   );
   const trendRows = useMemo(() => buildTrafficTrendRows(points), [points]);
   const groups = groupTrafficSources(sources);
+  const pagination = useTablePagination({
+    key: GEO_TRAFFIC_SOURCES_PAGE_PARAM,
+    totalItems: groups.length,
+    isReady: traffic !== undefined,
+  });
   const sparklineDays = useMemo(() => trafficSparklineDays(points), [points]);
   const canSparkline = hasTrafficSourceSeries(points);
   const seriesByGroup = new Map<string, { day: string; value: number }[]>();
@@ -360,8 +368,12 @@ export function AiTrafficCard({ traffic }: AiTrafficCardProps) {
           data={groups}
           defaultSort={{ key: "visits", direction: "desc" }}
           emptyState="No AI traffic captured yet"
+          footer={<TablePagination {...pagination} itemLabel="sources" />}
           getRowId={(row) => trafficGroupKey(row.visitorType, row.key)}
-          height={tableHeightFor(groups.length)}
+          height={paginatedTableHeightFor(pagination.pageRowCount)}
+          onSortChange={() => pagination.setPage(1)}
+          page={pagination.page}
+          pageSize={pagination.pageSize}
           resizable
           rowHeight={TABLE_ROW_HEIGHT}
         />

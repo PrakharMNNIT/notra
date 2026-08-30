@@ -1,7 +1,11 @@
 import { flushGeoLog } from "@notra/ai/evlog";
-import { runGeoScan } from "@notra/geo-core/geo/scan";
-import type { GeoScanResult } from "@notra/geo-core/types/geo";
+import { retryGeoScan, runGeoScan } from "@notra/geo-core/geo/scan";
+import type {
+  GeoScanResult,
+  GeoScanRunResult,
+} from "@notra/geo-core/types/geo";
 import { Effect } from "effect";
+import { FatalError } from "workflow";
 
 import { geoCoreDashboardLayer } from "@/lib/geo/configure";
 
@@ -23,7 +27,7 @@ export async function runGeoScanStep(
   projectId?: string,
   claimedAt?: string,
   scanId?: string
-): Promise<GeoScanResult> {
+): Promise<GeoScanRunResult> {
   "use step";
   try {
     return await Effect.runPromise(
@@ -34,6 +38,36 @@ export async function runGeoScanStep(
         scanId
       ).pipe(Effect.provide(geoCoreDashboardLayer))
     );
+  } finally {
+    await flushGeoLog();
+  }
+}
+
+export async function retryGeoScanStep(
+  organizationId: string,
+  projectIds: string[],
+  hadSuccessfulChecks: boolean
+): Promise<GeoScanResult> {
+  "use step";
+  try {
+    const result = await Effect.runPromise(
+      retryGeoScan(organizationId, projectIds).pipe(
+        Effect.provide(geoCoreDashboardLayer)
+      )
+    );
+    if (result.status === "retry_no_successful_checks") {
+      if (!hadSuccessfulChecks && result.checks === 0) {
+        const message = `GEO scan retry produced no successful checks for ${result.retryProjectIds.length} projects`;
+        console.error(`[GEO] ${message}`);
+        throw new FatalError(message);
+      }
+      return {
+        status: "completed",
+        checks: result.checks,
+        mentions: result.mentions,
+      };
+    }
+    return result;
   } finally {
     await flushGeoLog();
   }

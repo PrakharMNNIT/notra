@@ -2,7 +2,7 @@ import { describeContentBillingDenial } from "@notra/ai/billing/content-billing"
 import { FEATURES } from "@notra/ai/billing/features";
 import { DEFAULT_LANGUAGE } from "@notra/ai/constants/languages";
 import { geoLog } from "@notra/ai/evlog";
-import { gateway } from "@notra/ai/gateway";
+import { gateway, getRouteMetadata } from "@notra/ai/gateway";
 import type { AgentTokenUsage } from "@notra/ai/types/agents";
 import { EMPTY_GEO_CHECK_GROUNDING } from "@notra/db/constants/geo-checks";
 import { db } from "@notra/db/drizzle";
@@ -18,13 +18,14 @@ import type {
 } from "@notra/db/types/geo-checks";
 import { insertGeoMentionChecks } from "@notra/db/utils/geo-checks";
 import { generateText, type ModelMessage, Output, stepCountIs } from "ai";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { Effect, Ref, Semaphore } from "effect";
 
 import {
   GEO_ANSWER_MAX_TOKENS,
   GEO_ANSWER_SYSTEM_PROMPT,
   GEO_CURSOR_TIMEOUT_MS,
+  GEO_DIRECT_GROUNDED_PROVIDERS,
   GEO_EXCERPT_MAX_LENGTH,
   GEO_GROUNDED_ANSWER_MAX_TOKENS,
   GEO_GROUNDED_MAX_PROMPTS,
@@ -54,9 +55,11 @@ import type {
   GeoGroundedEngine,
   GeoJudgeResult,
   GeoModelGateway,
-  GeoPromptDefinition,
   GeoProjectScanOutcome,
+  GeoPromptDefinition,
+  GeoScanProgramOptions,
   GeoScanResult,
+  GeoScanRunResult,
   GeoScopeInput,
   GeoSequenceCheckOutcome,
   GeoSequenceDefinition,
@@ -67,6 +70,7 @@ import type {
 } from "../types/geo";
 import {
   resolveGeoEngineGateway,
+  resolveGeoGroundedZdrMode,
   resolveGeoZdrMode,
 } from "../utils/geo-engines";
 import {
@@ -87,6 +91,7 @@ import { buildGroundedInvocation, resolveGroundedEngines } from "./engines";
 import {
   GeoEmptyAnswerError,
   GeoJudgeError,
+  GeoNoSuccessfulChecksError,
   GeoScanError,
   GeoSequenceEmptyError,
   GeoSequenceNotFoundError,
@@ -109,6 +114,7 @@ import {
   renewGeoScanRun,
   withGeoScanRun,
 } from "./scan-status";
+import { resolveScanZdrPolicy } from "./zdr-policy";
 
 const MAX_JUDGE_COMPETITORS = 10;
 const GROUNDED_MAX_STEPS = 4;
@@ -262,6 +268,7 @@ const askGatewayEngine = Effect.fn("geo.askGatewayEngine")(function* (
     grounding: extractGrounding(result),
     finishReason: result.finishReason,
     usage: result.usage,
+    zdrEnforced: getRouteMetadata(result.providerMetadata)?.zdrEnforced ?? null,
   };
   return answer;
 });
@@ -297,6 +304,7 @@ const askCursorEngineEffect = Effect.fn("geo.askCursorEngine")(function* (
     text,
     grounding: EMPTY_GEO_CHECK_GROUNDING,
     finishReason: null,
+    zdrEnforced: false,
   };
   return answer;
 });
@@ -369,6 +377,9 @@ const askGroundedConversation = Effect.fn("geo.askGroundedConversation")(
       finishReason: result.finishReason,
       sources: collectGroundedSources(result.sources),
       usage: result.usage,
+      zdrEnforced: GEO_DIRECT_GROUNDED_PROVIDERS.has(engine.provider)
+        ? false
+        : (getRouteMetadata(result.providerMetadata)?.zdrEnforced ?? null),
     };
     return answer;
   }
@@ -487,6 +498,13 @@ const runGeoCheck = Effect.fn("geo.runCheck")(function* (
   const usage = answer.usage
     ? addTokenUsage(EMPTY_TOKEN_USAGE, answer.usage)
     : EMPTY_TOKEN_USAGE;
+  if (task.zdr !== "none" && answer.zdrEnforced === false) {
+    yield* geoLogWarn({
+      ...checkFailureFields(context, task),
+      event: "geo.check.zdr_relaxed",
+      zdr: task.zdr,
+    });
+  }
 
   const row: GeoCheckWrite = {
     organizationId: context.organizationId,
@@ -505,6 +523,7 @@ const runGeoCheck = Effect.fn("geo.runCheck")(function* (
     competitors: judged.competitors.slice(0, MAX_JUDGE_COMPETITORS),
     excerpt: judged.excerpt.slice(0, GEO_EXCERPT_MAX_LENGTH),
     grounding: answer.grounding,
+    zdrEnforced: answer.zdrEnforced,
     language: task.language,
     sources: grounded?.sources ?? [],
   };
@@ -579,10 +598,10 @@ const runGeoScanForProject = Effect.fn("geo.runScanProject")(function* (
     aliases: settings.aliases,
   };
 
-  const zdrPolicy = {
-    enforceZdr: settings.enforceZdr,
-    nonZdrApprovedEngines: settings.nonZdrApprovedEngines,
-  };
+  const zdrPolicy = yield* resolveScanZdrPolicy(organizationId, settings, {
+    projectId: settingsRow.projectId,
+    scanId,
+  });
   const trackedEngines: { engine: string; zdr: GeoZdrMode }[] = [];
   for (const engine of new Set(settings.engines)) {
     const zdr = resolveGeoZdrMode(catalog, engine, zdrPolicy);
@@ -618,7 +637,7 @@ const runGeoScanForProject = Effect.fn("geo.runScanProject")(function* (
   const groundedEngines: { grounded: GeoGroundedEngine; zdr: GeoZdrMode }[] =
     [];
   for (const grounded of resolveGroundedEngines()) {
-    const zdr = resolveGeoZdrMode(catalog, grounded.model, zdrPolicy);
+    const zdr = resolveGeoGroundedZdrMode(catalog, grounded, zdrPolicy);
     if (zdr === null) {
       yield* geoLogWarn({
         event: "geo.scan.skipped",
@@ -707,6 +726,11 @@ const runGeoScanForProject = Effect.fn("geo.runScanProject")(function* (
     scanId,
     runId,
     engines,
+    enforceZdr: zdrPolicy.enforceZdr,
+    zdrModes: Object.fromEntries([
+      ...trackedEngines.map((entry) => [entry.engine, entry.zdr]),
+      ...groundedEngines.map((entry) => [entry.grounded.key, entry.zdr]),
+    ]),
     promptCount: prompts.length,
     languages: settings.languages,
     tasks: tasks.length,
@@ -798,6 +822,15 @@ const runGeoScanForProject = Effect.fn("geo.runScanProject")(function* (
     droppedChecks += result.droppedTurns;
     rows.push(...result.rows);
     usage = addTokenUsage(usage, result.usage);
+  }
+
+  if (droppedChecks > 0 && rows.length === 0) {
+    return yield* Effect.fail(
+      new GeoNoSuccessfulChecksError({
+        message: `No successful GEO checks from ${droppedChecks} attempts`,
+        attemptedChecks: droppedChecks,
+      })
+    );
   }
 
   yield* Effect.tryPromise({
@@ -892,6 +925,14 @@ const runGeoSequenceCheck = Effect.fn("geo.runSequenceCheck")(function* (
       zdr
     );
     usage = addTokenUsage(usage, answer.usage);
+    if (zdr !== "none" && answer.zdrEnforced === false) {
+      yield* geoLogWarn({
+        ...failureFields,
+        event: "geo.check.zdr_relaxed",
+        turn: index,
+        zdr,
+      });
+    }
     const answerText = yield* requireAnswerText(
       grounded.key,
       sequencePromptId(sequence.id),
@@ -933,6 +974,7 @@ const runGeoSequenceCheck = Effect.fn("geo.runSequenceCheck")(function* (
       competitors: judged.competitors.slice(0, MAX_JUDGE_COMPETITORS),
       excerpt: judged.excerpt.slice(0, GEO_EXCERPT_MAX_LENGTH),
       grounding: answer.grounding,
+      zdrEnforced: answer.zdrEnforced,
       language: DEFAULT_LANGUAGE,
       sources: answer.sources,
     });
@@ -944,18 +986,19 @@ const runGeoSequenceCheck = Effect.fn("geo.runSequenceCheck")(function* (
 
 const runGeoScanProgram = Effect.fn("geo.runScan")(function* (
   organizationId: string,
-  projectId?: string,
-  claimedAt?: Date,
-  scanId?: string
+  options: GeoScanProgramOptions
 ) {
+  const { projectId, claimedAt, scanId } = options;
+  const scopedProjectIds =
+    options.projectIds ?? (projectId ? [projectId] : undefined);
   const billing = yield* GeoContentBillingService;
   const settingsRows = yield* Effect.tryPromise({
     try: () =>
       db.query.geoSettings.findMany({
-        where: projectId
+        where: scopedProjectIds
           ? and(
               eq(geoSettings.organizationId, organizationId),
-              eq(geoSettings.projectId, projectId)
+              inArray(geoSettings.projectId, scopedProjectIds)
             )
           : eq(geoSettings.organizationId, organizationId),
         orderBy: [asc(geoSettings.createdAt)],
@@ -994,7 +1037,8 @@ const runGeoScanProgram = Effect.fn("geo.runScan")(function* (
       event: "geo.scan.skipped",
       reason: "disabled",
       organizationId,
-      projectId: projectId ?? null,
+      projectId:
+        scopedProjectIds?.length === 1 ? (scopedProjectIds[0] ?? null) : null,
     });
     const skipped: GeoScanResult = { status: "skipped" };
     return skipped;
@@ -1002,6 +1046,7 @@ const runGeoScanProgram = Effect.fn("geo.runScan")(function* (
 
   let checks = 0;
   let mentions = 0;
+  const retryProjectIds: string[] = [];
   for (const settingsRow of enabledRows) {
     // The trigger's claim token only covers the project it claimed. Every
     // other row an organization-wide sweep visits claims its own slot here;
@@ -1113,8 +1158,13 @@ const runGeoScanProgram = Effect.fn("geo.runScan")(function* (
               })
             )
           )
-      )
+      ),
+      Effect.catchTag("GeoNoSuccessfulChecksError", () => Effect.succeed(null))
     );
+    if (!result) {
+      retryProjectIds.push(settingsRow.projectId);
+      continue;
+    }
 
     yield* billing
       .finalizeContentBilling({
@@ -1146,6 +1196,16 @@ const runGeoScanProgram = Effect.fn("geo.runScan")(function* (
 
     checks += result.checks;
     mentions += result.mentions;
+  }
+
+  if (retryProjectIds.length > 0) {
+    const retry: GeoScanRunResult = {
+      status: "retry_no_successful_checks",
+      retryProjectIds,
+      checks,
+      mentions,
+    };
+    return retry;
   }
 
   const completed: GeoScanResult = {
@@ -1198,12 +1258,11 @@ export function runGeoScan(
         return skipped;
       }
 
-      const guarded = runGeoScanProgram(
-        organizationId,
+      const guarded = runGeoScanProgram(organizationId, {
         projectId,
-        renewed.claimedAt,
-        scanId
-      ).pipe(
+        claimedAt: renewed.claimedAt,
+        scanId,
+      }).pipe(
         Effect.onError(() =>
           releaseGeoScanRun(projectId, renewed.claimedAt).pipe(
             geoSkip("scan claim release failed")
@@ -1223,7 +1282,7 @@ export function runGeoScan(
     });
   }
 
-  const program = runGeoScanProgram(organizationId, projectId);
+  const program = runGeoScanProgram(organizationId, { projectId });
   if (!(scanId && projectId)) {
     return program;
   }
@@ -1234,6 +1293,18 @@ export function runGeoScan(
       )
     )
   );
+}
+
+/**
+ * Second pass for projects whose first scan produced no successful checks.
+ * Every project claims its own slot here: the trigger's claim was already
+ * handed back when the first pass ended.
+ */
+export function retryGeoScan(
+  organizationId: string,
+  projectIds: readonly string[]
+) {
+  return runGeoScanProgram(organizationId, { projectIds });
 }
 
 /**
@@ -1288,15 +1359,16 @@ const runGeoSequenceNowProgram = Effect.fn("geo.runSequenceNow")(function* (
 
   const catalog = yield* loadGeoModelCatalog(scope.organizationId);
   const settings = toGeoSettings(settingsRow, catalog);
-  const zdrPolicy = {
-    enforceZdr: settings.enforceZdr,
-    nonZdrApprovedEngines: settings.nonZdrApprovedEngines,
-  };
+  const zdrPolicy = yield* resolveScanZdrPolicy(
+    scope.organizationId,
+    settings,
+    { projectId, sequenceId }
+  );
 
   const groundedEngines: { grounded: GeoGroundedEngine; zdr: GeoZdrMode }[] =
     [];
   for (const grounded of resolveGroundedEngines()) {
-    const zdr = resolveGeoZdrMode(catalog, grounded.model, zdrPolicy);
+    const zdr = resolveGeoGroundedZdrMode(catalog, grounded, zdrPolicy);
     if (zdr === null) {
       yield* geoLogWarn({
         event: "geo.scan.skipped",

@@ -146,6 +146,8 @@ export interface GeoEngineAnswer {
   grounding: GeoCheckGrounding;
   finishReason: FinishReason | null;
   usage?: LanguageModelUsage;
+  /** Whether the call ran with ZDR enforced; null when the route did not say. */
+  zdrEnforced: boolean | null;
 }
 
 export interface GeoGroundedAnswer extends GeoEngineAnswer {
@@ -396,6 +398,23 @@ export interface GeoScanResult {
   mentions?: number;
 }
 
+export interface GeoScanRetryResult {
+  status: "retry_no_successful_checks";
+  retryProjectIds: string[];
+  checks: number;
+  mentions: number;
+}
+
+export type GeoScanRunResult = GeoScanResult | GeoScanRetryResult;
+
+export interface GeoScanProgramOptions {
+  projectId?: string;
+  claimedAt?: Date;
+  scanId?: string;
+  /** Explicit project subset for a retry pass; overrides `projectId` scoping. */
+  projectIds?: readonly string[];
+}
+
 export interface GeoProjectScanOutcome {
   checks: number;
   mentions: number;
@@ -415,10 +434,22 @@ export interface GeoCheckTask {
   zdr: GeoZdrMode;
 }
 
+/** Log context for the scan-time ZDR entitlement re-check. */
+export interface GeoScanZdrPolicyFields {
+  projectId: string;
+  scanId?: string;
+  sequenceId?: string;
+}
+
 /** Per-project ZDR inputs needed to decide how an engine may run. */
 export interface GeoZdrPolicy {
   enforceZdr: boolean;
   nonZdrApprovedEngines: readonly string[];
+  /**
+   * Mode for engines when ZDR is not enforced. Defaults to `preferred`;
+   * organizations without the ZDR add-on get `none`.
+   */
+  nonEnforcedMode?: GeoZdrMode;
 }
 
 /** Engine a scan will actually call after ZDR skip/fallback. */
@@ -474,6 +505,11 @@ export interface GeoGroundedEngine {
   label: string;
   model: string;
   provider: GeoGroundedProvider;
+  /**
+   * ZDR coverage when the catalog has no entry for `model`. Direct vendor
+   * SDK engines bypass the router and can never honour ZDR.
+   */
+  zdr: GeoModelZdr;
   envVar: string | null;
   isAvailable: () => boolean;
 }
@@ -939,7 +975,10 @@ export interface GeoGatewayModel {
 }
 
 /** How strictly a scan asks the router for zero data retention. */
-export type GeoZdrMode = "required" | "preferred";
+export type GeoZdrMode = "required" | "preferred" | "none";
+
+/** Result of a ZDR entitlement lookup; `unknown` means billing did not answer. */
+export type GeoZdrEntitlement = "entitled" | "not_entitled" | "unknown";
 
 export interface ShareOfVoiceRow {
   brand: string;

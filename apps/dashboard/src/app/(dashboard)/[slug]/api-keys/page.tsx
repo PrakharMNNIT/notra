@@ -462,7 +462,7 @@ function ApiKeysTable({
   onSort: () => void;
 }) {
   return (
-    <div className="border-border/80 border-b-border/40 bg-muted/80 overflow-hidden rounded-lg border shadow-2xs">
+    <div className="smooth-shadow-ring-xs bg-muted/80 overflow-hidden rounded-lg">
       <Table>
         <TableHeader>
           <TableRow>
@@ -545,8 +545,9 @@ function CreateApiKeyDialog({
         className={
           createdKey
             ? "sm:max-w-md"
-            : "flex max-h-[90svh] flex-col overflow-hidden sm:max-w-2xl"
+            : "flex max-h-[85svh] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
         }
+        drawerClassName="[&>form]:px-0"
       >
         {createdKey ? (
           <>
@@ -574,7 +575,7 @@ function CreateApiKeyDialog({
           </>
         ) : (
           <>
-            <ResponsiveDialogHeader>
+            <ResponsiveDialogHeader className="shrink-0 border-b p-4 pr-14">
               <ResponsiveDialogTitle className="text-2xl">
                 Create API Key
               </ResponsiveDialogTitle>
@@ -582,12 +583,9 @@ function CreateApiKeyDialog({
                 Create a new API key for your organization.
               </ResponsiveDialogDescription>
             </ResponsiveDialogHeader>
-            <form
-              action={onSubmit}
-              className="flex min-h-0 flex-1 flex-col overflow-hidden"
-            >
-              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain py-4 pr-1">
-                <Field>
+            <form action={onSubmit} className="flex min-h-0 flex-1 flex-col">
+              <div className="flex min-h-0 flex-1 flex-col gap-4 p-4">
+                <Field className="shrink-0">
                   <FieldLabel>
                     Name<span className="text-destructive -ml-1">*</span>
                   </FieldLabel>
@@ -604,19 +602,7 @@ function CreateApiKeyDialog({
                   ) : null}
                 </Field>
 
-                <Field>
-                  <FieldLabel>
-                    Permission
-                    <span className="text-destructive -ml-1">*</span>
-                  </FieldLabel>
-                  <ApiKeyPermissionSelector
-                    disabled={isPending}
-                    onValueChange={onScopesChange}
-                    value={input.scopes}
-                  />
-                </Field>
-
-                <Field>
+                <Field className="shrink-0">
                   <FieldLabel>
                     Expiration
                     <span className="text-muted-foreground -ml-1 text-xs">
@@ -642,8 +628,21 @@ function CreateApiKeyDialog({
                     </SelectContent>
                   </Select>
                 </Field>
+
+                <Field className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                  <FieldLabel>
+                    Permissions
+                    <span className="text-destructive -ml-1">*</span>
+                  </FieldLabel>
+                  <ApiKeyPermissionSelector
+                    className="[&>div]:py-2.5"
+                    disabled={isPending}
+                    onValueChange={onScopesChange}
+                    value={input.scopes}
+                  />
+                </Field>
               </div>
-              <ResponsiveDialogFooter className="shrink-0">
+              <ResponsiveDialogFooter className="bg-background/95 supports-backdrop-filter:bg-background/80 mx-0 mb-0 shrink-0 rounded-b-xl border-t p-4 sm:justify-between">
                 <ResponsiveDialogClose
                   disabled={isPending}
                   render={<Button variant="outline">Cancel</Button>}
@@ -675,20 +674,23 @@ function EditApiKeyDialog({
 }) {
   return (
     <ResponsiveDialog onOpenChange={onOpenChange} open={open}>
-      <ResponsiveDialogContent className="sm:max-w-2xl">
-        <form action={onSubmit}>
-          <ResponsiveDialogHeader>
+      <ResponsiveDialogContent
+        className="flex max-h-[85svh] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
+        drawerClassName="[&>form]:px-0"
+      >
+        <form action={onSubmit} className="flex min-h-0 flex-1 flex-col">
+          <ResponsiveDialogHeader className="shrink-0 border-b p-4 pr-14">
             <ResponsiveDialogTitle className="text-2xl">
               Edit API Key
             </ResponsiveDialogTitle>
           </ResponsiveDialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="flex min-h-0 flex-1 flex-col gap-4 p-4">
             <editForm.Field
               name="name"
               validators={{ onChange: updateApiKeySchema.shape.name }}
             >
               {(field) => (
-                <Field>
+                <Field className="shrink-0">
                   <FieldLabel>
                     Name<span className="text-destructive -ml-1">*</span>
                   </FieldLabel>
@@ -714,25 +716,9 @@ function EditApiKeyDialog({
               )}
             </editForm.Field>
 
-            <editForm.Field name="scopes">
-              {(field) => (
-                <Field>
-                  <FieldLabel>
-                    Permission
-                    <span className="text-destructive -ml-1">*</span>
-                  </FieldLabel>
-                  <ApiKeyPermissionSelector
-                    disabled={isPending}
-                    onValueChange={(scopes) => field.handleChange(scopes)}
-                    value={field.state.value as string[]}
-                  />
-                </Field>
-              )}
-            </editForm.Field>
-
             <editForm.Field name="expiration">
               {(field) => (
-                <Field>
+                <Field className="shrink-0">
                   <FieldLabel>Expiration</FieldLabel>
                   <Select
                     disabled={isPending}
@@ -755,8 +741,25 @@ function EditApiKeyDialog({
                 </Field>
               )}
             </editForm.Field>
+
+            <editForm.Field name="scopes">
+              {(field) => (
+                <Field className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                  <FieldLabel>
+                    Permissions
+                    <span className="text-destructive -ml-1">*</span>
+                  </FieldLabel>
+                  <ApiKeyPermissionSelector
+                    className="[&>div]:py-2.5"
+                    disabled={isPending}
+                    onValueChange={(scopes) => field.handleChange(scopes)}
+                    value={field.state.value as string[]}
+                  />
+                </Field>
+              )}
+            </editForm.Field>
           </div>
-          <ResponsiveDialogFooter>
+          <ResponsiveDialogFooter className="bg-background/95 supports-backdrop-filter:bg-background/80 mx-0 mb-0 shrink-0 rounded-b-xl border-t p-4">
             <ResponsiveDialogClose
               disabled={isPending}
               render={<Button variant="outline">Cancel</Button>}

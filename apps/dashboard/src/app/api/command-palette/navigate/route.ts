@@ -279,7 +279,9 @@ export async function POST(request: NextRequest) {
 
   try {
     const { object } = await generateObject({
-      model: gateway("anthropic/claude-sonnet-4.6", { organizationId }),
+      model: gateway("anthropic/claude-sonnet-4.6", {
+        organizationId,
+      }),
       schema: resultSchema,
       system: [
         "You are a navigation router for the Notra dashboard command palette.",

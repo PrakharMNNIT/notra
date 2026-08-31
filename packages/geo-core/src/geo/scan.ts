@@ -452,7 +452,9 @@ const translatePrompts = Effect.fn("geo.translatePrompts")(function* (
   const result = yield* Effect.tryPromise({
     try: (signal) =>
       generateText({
-        model: gateway(GEO_JUDGE_MODEL, { organizationId }),
+        model: gateway(GEO_JUDGE_MODEL, {
+          organizationId,
+        }),
         output: Output.object({ schema: geoTranslationResultSchema }),
         prompt: `Translate each prompt into ${language}. Keep brand and product names unchanged. Return the translations in the same order.\n\n${JSON.stringify(prompts.map((prompt) => prompt.text))}`,
         system:

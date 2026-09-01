@@ -1,5 +1,3 @@
-"use client";
-
 import { cn } from "@notra/ui/lib/utils";
 import Image from "next/image";
 import Link from "next/link";
@@ -68,6 +66,7 @@ export default function FooterSection() {
           aria-hidden="true"
           className="h-auto w-[121.4%] max-w-[126rem] min-w-[60rem] translate-y-[23%] dark:opacity-40"
           height={536}
+          sizes="(max-width: 49.42rem) 60rem, (max-width: 103.79rem) 121.4vw, 126rem"
           src="/marketing/landing/footer-wordmark.svg"
           width={1748}
         />

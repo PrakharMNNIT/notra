@@ -338,37 +338,38 @@ postsRoutes.openapi(getPostsRoute, async (c) => {
       : undefined
   );
 
-  const [countResult] = await db
-    .select({ totalItems: count(posts.id) })
-    .from(posts)
-    .where(whereClause);
+  const [[countResult], results] = await Promise.all([
+    db
+      .select({ totalItems: count(posts.id) })
+      .from(posts)
+      .where(whereClause),
+    db.query.posts.findMany({
+      where: whereClause,
+      orderBy: (table, { asc, desc }) =>
+        sort === "asc"
+          ? [asc(table.createdAt), asc(table.id)]
+          : [desc(table.createdAt), desc(table.id)],
+      limit,
+      offset,
+      columns: {
+        id: true,
+        title: true,
+        slug: true,
+        content: true,
+        htmlUrl: true,
+        markdown: true,
+        recommendations: true,
+        contentType: true,
+        sourceMetadata: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    }),
+  ]);
 
   const totalItems = countResult?.totalItems ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalItems / limit));
-
-  const results = await db.query.posts.findMany({
-    where: whereClause,
-    orderBy: (table, { asc, desc }) =>
-      sort === "asc"
-        ? [asc(table.createdAt), asc(table.id)]
-        : [desc(table.createdAt), desc(table.id)],
-    limit,
-    offset,
-    columns: {
-      id: true,
-      title: true,
-      slug: true,
-      content: true,
-      htmlUrl: true,
-      markdown: true,
-      recommendations: true,
-      contentType: true,
-      sourceMetadata: true,
-      status: true,
-      createdAt: true,
-      updatedAt: true,
-    },
-  });
 
   return c.json(
     {

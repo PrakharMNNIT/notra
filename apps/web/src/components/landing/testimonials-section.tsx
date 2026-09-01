@@ -70,10 +70,10 @@ function TestimonialCard({
 
 export function TestimonialsSection() {
   return (
-    <section className="flex w-full flex-col items-center gap-10 px-6 pt-24 pb-12 sm:px-12 sm:pb-27.5 lg:gap-13.5 lg:px-20 lg:pt-70">
+    <section className="flex w-full flex-col items-center gap-10 px-6 pt-24 pb-27.5 sm:px-12 lg:gap-13.5 lg:px-20 lg:pt-70">
       <div className="flex flex-col items-center gap-4">
         <h2 className="font-display dark:text-foreground text-center text-[2rem]/tight font-medium tracking-[-0.02em] text-black sm:text-4xl/tight lg:text-[3.0625rem]/14">
-          Shipping, without the <span className="text-primary">busywork</span>.
+          Teams already <span className="text-primary">ship</span> with Notra.
         </h2>
         <p className="font-display dark:text-muted-foreground max-w-[31.875rem] text-center text-lg/7 font-medium tracking-[-0.01em] text-[#1E1E1EBF] sm:text-xl/7.5">
           {TESTIMONIALS_SUBHEADING}

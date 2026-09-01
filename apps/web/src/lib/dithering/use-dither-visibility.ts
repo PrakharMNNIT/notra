@@ -16,6 +16,7 @@ export function useDitherVisibility(): DitherVisibilityState {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isIdle, setIsIdle] = useState(false);
   const [isInView, setIsInView] = useState(false);
+  const [hasEntered, setHasEntered] = useState(false);
   const prefersReducedMotion = useSyncExternalStore(
     subscribeToReducedMotion,
     getReducedMotionSnapshot,
@@ -43,6 +44,9 @@ export function useDitherVisibility(): DitherVisibilityState {
       (entries) => {
         const visible = entries.some((entry) => entry.isIntersecting);
         setIsInView(visible);
+        if (visible) {
+          setHasEntered(true);
+        }
       },
       { rootMargin: VIEWPORT_MARGIN }
     );
@@ -52,8 +56,7 @@ export function useDitherVisibility(): DitherVisibilityState {
 
   return {
     containerRef,
-    // Unmount offscreen canvases so their WebGL contexts and GPU memory are released.
-    shouldRender: isIdle && isInView,
+    shouldRender: isIdle && hasEntered,
     isAnimating: isInView && !prefersReducedMotion,
   };
 }

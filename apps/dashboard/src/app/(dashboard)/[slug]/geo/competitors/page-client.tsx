@@ -3,7 +3,9 @@
 import { PlusSignIcon, Upload01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Kbd } from "@notra/ui/components/ui/kbd";
+import { Skeleton } from "@notra/ui/components/ui/skeleton";
 import { useHotkey } from "@tanstack/react-hotkeys";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -11,10 +13,10 @@ import { Button } from "@/components/button";
 import { EmptyState } from "@/components/empty-state";
 import { EmptyStateTablePreview } from "@/components/empty-state-preview";
 import { CompetitorEditDialog } from "@/components/geo/competitor-edit-dialog";
-import { CompetitorShareCard } from "@/components/geo/competitor-share-card";
 import { CompetitorsTable } from "@/components/geo/competitors-table";
 import { CompetitorsCsvImportDialog } from "@/components/geo/geo-csv-import-dialog";
 import { GeoRangePicker } from "@/components/geo/geo-range-picker";
+import { GeoSectionSkeleton } from "@/components/geo/skeleton-parts";
 import { PageContainer } from "@/components/layout/container";
 import {
   GeoProjectProvider,
@@ -36,6 +38,21 @@ import { useGeoRange } from "@/lib/hooks/use-geo-range";
 import { withGeoProject } from "@/utils/geo-paths";
 
 import { GeoPageSkeleton } from "../skeleton";
+
+const CompetitorShareCard = dynamic(
+  () =>
+    import("@/components/geo/competitor-share-card").then(
+      (module) => module.CompetitorShareCard
+    ),
+  {
+    loading: () => (
+      <GeoSectionSkeleton eyebrow="Share of voice">
+        <Skeleton className="h-64 w-full rounded-xl" />
+      </GeoSectionSkeleton>
+    ),
+    ssr: false,
+  }
+);
 
 interface PageClientProps {
   organizationSlug: string;
@@ -65,7 +82,8 @@ function GeoCompetitorsPageContent({ organizationSlug }: PageClientProps) {
   const { data: settingsData, isPending } = useGeoSettings(organizationId);
   const { data: competitorShare } = useGeoCompetitorShare(
     organizationId,
-    geoRange.query
+    geoRange.query,
+    true
   );
   const { competitors } = useGeoCompetitorsDb(organizationId);
   const isScanning = useIsGeoScanning(organizationId);

@@ -104,6 +104,7 @@ import {
   aiTrafficInputSchema,
   geoBrandSearchInputSchema,
   geoCompetitorDeleteInputSchema,
+  geoCompetitorShareInputSchema,
   geoCompetitorsImportInputSchema,
   geoCompetitorDetailInputSchema,
   geoCompetitorSuggestionsInputSchema,
@@ -442,9 +443,11 @@ export const geoRouter = {
       geoHandler((input) => loadGeoPromptResults(input, geoWindow(input)))
     ),
   competitorShare: authorizedProcedure
-    .input(geoTimeseriesInputSchema)
+    .input(geoCompetitorShareInputSchema)
     .handler(
-      geoOpenHandler((input) => loadGeoCompetitorShare(input, geoWindow(input)))
+      geoOpenHandler((input) =>
+        loadGeoCompetitorShare(input, geoWindow(input), input.summaryOnly)
+      )
     ),
   competitors: authorizedProcedure
     .input(geoOrganizationInputSchema)

@@ -1,7 +1,12 @@
 import type { GeoRouterError } from "@notra/geo-core/geo/errors";
 
 import { toUnexpectedError } from "@/lib/orpc/effect";
-import { badRequest, notFound, paymentRequired } from "@/lib/orpc/utils/errors";
+import {
+  badRequest,
+  conflict,
+  notFound,
+  paymentRequired,
+} from "@/lib/orpc/utils/errors";
 
 export function toGeoOrpcError(failure: GeoRouterError): Error {
   switch (failure._tag) {
@@ -58,6 +63,13 @@ export function toGeoOrpcError(failure: GeoRouterError): Error {
     case "GeoContentBriefStateError":
       return badRequest(
         `This brief is already ${failure.status}. Start a new one.`
+      );
+    case "GeoContentBriefConflictError":
+      return conflict(
+        "This plan changed while it was being saved. Try again.",
+        {
+          updatedAt: failure.updatedAt,
+        }
       );
     case "GeoWriterPlanError":
       console.error("[GEO] writer planning failed:", failure);

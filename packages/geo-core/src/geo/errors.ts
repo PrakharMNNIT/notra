@@ -199,6 +199,13 @@ export class GeoContentBriefStateError extends Data.TaggedError(
   readonly status: string;
 }> {}
 
+export class GeoContentBriefConflictError extends Data.TaggedError(
+  "GeoContentBriefConflictError"
+)<{
+  readonly briefId: string;
+  readonly updatedAt: string;
+}> {}
+
 export class GeoWriterPlanError extends Data.TaggedError("GeoWriterPlanError")<{
   readonly message: string;
   readonly cause?: unknown;
@@ -214,6 +221,7 @@ export type GeoRouterError =
   | GeoBrandIdentityMissingError
   | GeoBrandIdentityNotFoundError
   | GeoCompetitorLimitError
+  | GeoContentBriefConflictError
   | GeoContentBriefNotFoundError
   | GeoContentBriefStateError
   | GeoDatabaseError

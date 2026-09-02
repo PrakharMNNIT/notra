@@ -3,6 +3,7 @@ import type {
   CreatePostRecordParams,
   CreatePostRecordResult,
   EnsureChatPostCollectionParams,
+  PostDatabase,
   UpdatePostRecordParams,
   UpdatePostRecordResult,
 } from "@notra/ai/types/post-service";
@@ -75,7 +76,8 @@ export async function createPostRecord(
 }
 
 export async function updatePostRecord(
-  params: UpdatePostRecordParams
+  params: UpdatePostRecordParams,
+  database: PostDatabase = db
 ): Promise<UpdatePostRecordResult> {
   const updates: Record<string, string | null> = {};
   if (params.title !== undefined) {
@@ -91,12 +93,15 @@ export async function updatePostRecord(
   if (params.recommendations !== undefined) {
     updates.recommendations = params.recommendations;
   }
+  if (params.contentSubtype !== undefined) {
+    updates.contentSubtype = params.contentSubtype;
+  }
 
   if (Object.keys(updates).length === 0) {
     return { status: "no_changes" };
   }
 
-  const rows = await db
+  const rows = await database
     .update(posts)
     .set(updates)
     .where(

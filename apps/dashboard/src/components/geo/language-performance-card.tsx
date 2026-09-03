@@ -12,6 +12,7 @@ import {
   buildLanguagePerformanceRows,
   trackedGeoLanguages,
 } from "@notra/geo-core/utils/geo-language-rows";
+import { GeoBar } from "@notra/ui/components/geo/geo-bar";
 import {
   ResponsiveAlertDialog,
   ResponsiveAlertDialogAction,
@@ -31,7 +32,6 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/button";
-import { GeoBar } from "@/components/geo/geo-bar";
 import { GeoRateSparkline } from "@/components/geo/geo-rate-sparkline";
 import { StatusSpinner } from "@/components/geo/status-spinner";
 import { Twemoji } from "@/components/geo/twemoji";

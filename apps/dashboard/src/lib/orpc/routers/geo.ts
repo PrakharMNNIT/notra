@@ -32,6 +32,7 @@ import {
   startAgentReadinessScan,
 } from "@notra/geo-core/geo/agent-readiness";
 import {
+  createGeoProjectFromWebsite,
   discoverGeoWebsite,
   generateGeoFromWebsite,
 } from "@notra/geo-core/geo/discover";
@@ -77,8 +78,8 @@ import {
   upsertGeoSettings,
 } from "@notra/geo-core/geo/programs";
 import {
-  createGeoProject,
   listGeoProjects,
+  requireBrandIdentity,
   requireGeoProject,
 } from "@notra/geo-core/geo/projects";
 import { promptKey } from "@notra/geo-core/geo/prompt-key";
@@ -860,10 +861,18 @@ export const geoRouter = {
     .handler(
       geoHandler(
         (input) =>
-          createGeoProject(
+          requireBrandIdentity(
             input.organizationId,
-            input.name,
             input.brandSettingsId
+          ).pipe(
+            Effect.flatMap((identity) =>
+              createGeoProjectFromWebsite(
+                input.organizationId,
+                input.name,
+                input.brandSettingsId,
+                identity.websiteUrl
+              )
+            )
           ),
         async ({ context, input, output }) => {
           const projectCount = await countGeoProjects(

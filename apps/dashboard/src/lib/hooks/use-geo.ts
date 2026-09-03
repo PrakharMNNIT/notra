@@ -14,6 +14,7 @@ import type { AgentReadinessResponse } from "@notra/geo-core/types/agent-readine
 import type {
   AiTrafficResponse,
   GeoBrandSearchResponse,
+  GeoChangesResponse,
   GeoCompetitorDetailResponse,
   GeoCompetitorShareResponse,
   GeoCompetitorSuggestionsResponse,
@@ -28,6 +29,7 @@ import type {
   GeoProject,
   GeoProjectsResponse,
   GeoIngestSetupResponse,
+  GeoPromptHistoryResponse,
   GeoPromptResultsResponse,
   GeoSequenceResultsResponse,
   GeoSettingsResponse,
@@ -144,6 +146,12 @@ async function invalidateGeoScanResultQueries(queryClient: QueryClient) {
     }),
     queryClient.invalidateQueries({
       queryKey: dashboardOrpc.geo.promptResults.key(),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: dashboardOrpc.geo.changes.key(),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: dashboardOrpc.geo.promptHistory.key(),
     }),
     queryClient.invalidateQueries({
       queryKey: dashboardOrpc.geo.competitorShare.key(),
@@ -305,6 +313,33 @@ export function useGeoPromptResults(
     enabled: !!organizationId,
     placeholderData: keepPreviousData,
     meta: { errorMessage: "Failed to load prompt results" },
+  });
+}
+
+export function useGeoPromptHistory(
+  organizationId: string,
+  promptId: string,
+  options: { enabled: boolean }
+) {
+  const { projectId } = useGeoProjectScope();
+  return useQuery<GeoPromptHistoryResponse>({
+    ...dashboardOrpc.geo.promptHistory.queryOptions({
+      input: { organizationId, projectId, promptId },
+    }),
+    enabled: options.enabled && !!organizationId && !!promptId,
+    meta: { errorMessage: "Failed to load prompt history" },
+  });
+}
+
+export function useGeoChanges(organizationId: string) {
+  const { projectId } = useGeoProjectScope();
+  return useQuery<GeoChangesResponse>({
+    ...dashboardOrpc.geo.changes.queryOptions({
+      input: { organizationId, projectId },
+    }),
+    enabled: !!organizationId,
+    placeholderData: keepPreviousData,
+    meta: { errorMessage: "Failed to load scan changes" },
   });
 }
 
@@ -592,6 +627,30 @@ export function useGeoStartScan(organizationId: string) {
     },
     onError: (error) => {
       toast.error(toErrorMessage(error, "Failed to start scan"));
+    },
+  });
+}
+
+export function useGeoRescanPrompt(organizationId: string) {
+  const { projectId } = useGeoProjectScope();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: geoStartScanMutationKey(organizationId, projectId),
+    mutationFn: (promptId: string) =>
+      dashboardOrpc.geo.rescanPrompt.call({
+        organizationId,
+        projectId,
+        promptId,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: dashboardOrpc.geo.settings.queryKey({
+          input: { organizationId, projectId },
+        }),
+      });
+    },
+    onError: (error) => {
+      toast.error(toErrorMessage(error, "Failed to start rescan"));
     },
   });
 }
@@ -986,6 +1045,11 @@ function useInvalidateSuggestionQueries(organizationId: string) {
       }),
       queryClient.invalidateQueries({
         queryKey: dashboardOrpc.geo.promptsList.queryKey({
+          input: { organizationId },
+        }),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: dashboardOrpc.geo.writerGaps.queryKey({
           input: { organizationId },
         }),
       }),

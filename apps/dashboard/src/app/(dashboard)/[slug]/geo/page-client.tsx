@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/button";
 import { GeoRangePicker } from "@/components/geo/geo-range-picker";
 import { GeoSetupEmpty } from "@/components/geo/geo-setup-empty";
+import { ScanPreflightDialog } from "@/components/geo/scan-preflight-dialog";
 import { PageContainer } from "@/components/layout/container";
 import { GeoProjectProvider } from "@/components/providers/geo-project-provider";
 import { useOrganizationsContext } from "@/components/providers/organization-provider";
@@ -82,8 +83,13 @@ function GeoPageContent({ organizationSlug }: GeoPageContentProps) {
   );
   const startScan = useGeoStartScan(organizationId);
   const isScanning = useIsGeoScanning(organizationId);
+  const [preflightOpen, setPreflightOpen] = useState(false);
+  const enabledPromptCount =
+    prompts?.prompts.filter((prompt) => prompt.enabled).length ?? 0;
 
-  useHotkey("R", () => startScan.mutate("hotkey"), { enabled: !isScanning });
+  useHotkey("R", () => setPreflightOpen(true), {
+    enabled: !isScanning && !preflightOpen,
+  });
 
   const [activeTab, setActiveTab] = useQueryState(
     "tab",
@@ -157,7 +163,7 @@ function GeoPageContent({ organizationSlug }: GeoPageContentProps) {
             <Button
               className="w-fit gap-2"
               disabled={isScanning}
-              onClick={() => startScan.mutate("manual")}
+              onClick={() => setPreflightOpen(true)}
               size="sm"
             >
               <span className="inline-flex items-center gap-1.5">
@@ -188,6 +194,19 @@ function GeoPageContent({ organizationSlug }: GeoPageContentProps) {
           timeseriesPoints={timeseries?.points ?? []}
         />
       </div>
+      <ScanPreflightDialog
+        engines={settings.engines}
+        isPending={startScan.isPending}
+        languages={settings.languages}
+        lastScanAt={settings.lastScanAt}
+        onConfirm={() => {
+          startScan.mutate();
+          setPreflightOpen(false);
+        }}
+        onOpenChange={setPreflightOpen}
+        open={preflightOpen}
+        promptCount={enabledPromptCount}
+      />
     </PageContainer>
   );
 }

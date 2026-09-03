@@ -159,11 +159,19 @@ export function GeoEnginePicker({
   planLoading = false,
   disabled = false,
   labeled = true,
+  scheduleRow,
 }: GeoEnginePickerProps) {
   const id = useId();
   const reduceMotion = useReducedMotion();
   const { activeOrganization } = useOrganizationsContext();
-  const { attach, data: customer, refetch } = useCustomer();
+  const isDev = process.env.NODE_ENV === "development";
+  const {
+    attach,
+    data: customer,
+    refetch,
+  } = useCustomer({
+    queryOptions: { enabled: !isDev },
+  });
   const [addonLoading, setAddonLoading] = useState(false);
   const [consentOpen, setConsentOpen] = useState(false);
   const checkoutReturnHandled = useRef(false);
@@ -613,6 +621,7 @@ export function GeoEnginePicker({
       </ul>
 
       <div className="ring-foreground/10 divide-y rounded-lg ring-1">
+        {scheduleRow}
         <div className={`${ROW_CLASS} py-2.5`}>
           <div className="space-y-0.5">
             <div className="flex items-center gap-1.5">

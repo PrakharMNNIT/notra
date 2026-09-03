@@ -113,18 +113,16 @@ export function DashboardSidebar({
       <SidebarContent>
         <SidebarSwap
           activeId={panelId}
-          className="flex min-h-0 flex-1 flex-col overflow-x-clip"
+          className="overflow-x-clip"
           items={[
             {
               id: "main",
               side: "left",
-              className: "flex-1",
               children: <NavMain />,
             },
             {
               id: "chat",
               side: "right",
-              className: "flex-1",
               children: (
                 <>
                   <SidebarBackButton onBack={handleBack} />
@@ -135,7 +133,6 @@ export function DashboardSidebar({
             {
               id: "settings",
               side: "right",
-              className: "flex-1",
               children: (
                 <>
                   <SidebarBackButton onBack={handleBack} />
@@ -146,7 +143,6 @@ export function DashboardSidebar({
             {
               id: "brand",
               side: "right",
-              className: "flex-1",
               children: (
                 <>
                   <SidebarBackButton onBack={handleBack} />

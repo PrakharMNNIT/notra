@@ -6,7 +6,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import type * as React from "react";
 import { cn } from "@notra/ui/lib/utils";
 
-function DropdownMenu({ ...props }: MenuPrimitive.Root.Props) {
+function DropdownMenu(props: MenuPrimitive.Root.Props) {
   return <MenuPrimitive.Root data-slot="dropdown-menu" {...props} />;
 }
 
@@ -113,6 +113,7 @@ function DropdownMenuSubTrigger({
   className,
   inset,
   children,
+  closeDelay = 200,
   ...props
 }: MenuPrimitive.SubmenuTrigger.Props & {
   inset?: boolean;
@@ -126,6 +127,7 @@ function DropdownMenuSubTrigger({
       data-inset={inset}
       data-slot="dropdown-menu-sub-trigger"
       {...props}
+      closeDelay={closeDelay}
     >
       {children}
       <HugeiconsIcon

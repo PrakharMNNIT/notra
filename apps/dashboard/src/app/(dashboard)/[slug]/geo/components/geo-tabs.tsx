@@ -130,6 +130,7 @@ export function GeoTabs({
               order={0}
             >
               <MentionRateCard
+                competitors={competitors}
                 engines={engines}
                 isScanning={isScanning}
                 organizationSlug={organizationSlug}
@@ -161,6 +162,9 @@ export function GeoTabs({
           </TabSection>
           <TabSection active={revealActive} order={3}>
             <EngineRateTable
+              aliases={settings.aliases}
+              companyName={settings.companyName}
+              competitors={competitors}
               engines={engines}
               isScanning={isScanning}
               organizationSlug={organizationSlug}

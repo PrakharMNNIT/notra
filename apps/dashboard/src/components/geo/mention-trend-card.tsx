@@ -203,8 +203,8 @@ export function MentionTrendCard({
           />
           <EChartsAreaChart.Tooltip
             confine={false}
+            hideZeros={false}
             emptyLabel={(row) => mentionTrendEmptyLabel(row, allKeys)}
-            hideZeros
             labelFormatter={formatFullDayLabel}
             labelKey="rawDay"
             layout="activity"

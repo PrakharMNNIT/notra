@@ -122,6 +122,7 @@ import { requireGeoProject } from "./projects";
 import {
   buildGeoPrompts,
   customPromptScanId,
+  isAutoPromptScanned,
   scopeGeoPrompts,
 } from "./prompts";
 import {
@@ -943,6 +944,7 @@ const buildGeoScanProjectPlan = Effect.fn("geo.buildScanProjectPlan")(
     });
 
     const pausedAutoPromptIds = new Set(settings.pausedAutoPromptIds);
+    const removedAutoPromptIds = new Set(settings.removedAutoPromptIds);
     const autoPrompts = buildGeoPrompts(
       settings,
       brand
@@ -952,7 +954,13 @@ const buildGeoScanProjectPlan = Effect.fn("geo.buildScanProjectPlan")(
           }
         : null
     )
-      .filter((prompt) => !pausedAutoPromptIds.has(prompt.id))
+      .filter((prompt) =>
+        isAutoPromptScanned(
+          prompt.id,
+          pausedAutoPromptIds,
+          removedAutoPromptIds
+        )
+      )
       .slice(0, GEO_MAX_PROMPTS);
 
     const allPrompts: GeoPromptDefinition[] = [

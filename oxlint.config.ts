@@ -171,7 +171,7 @@ export default defineConfig({
       files: [
         "apps/agent/agent/lib/schemas/chat-mirror.ts",
         "apps/agent/agent/lib/schemas/slack.ts",
-        "apps/dashboard/src/schemas/onboarding-agent.ts",
+        "packages/schemas/src/schemas/dashboard/onboarding-agent.ts",
         "packages/ai/src/integrations/mcp-auth-errors.ts",
         "packages/ai/src/integrations/mcp-oauth-errors.ts",
         "packages/ai/src/schemas/slack.ts",

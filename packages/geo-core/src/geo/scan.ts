@@ -167,6 +167,7 @@ function checkFailureFields(
     projectId: context.projectId,
     scanId: context.scanId,
     engine: task.engine,
+    runId: context.runId,
     promptId: task.prompt.id,
     language: task.language,
     grounded: task.grounded !== null,
@@ -185,6 +186,7 @@ function sequenceFailureFields(
     projectId: context.projectId,
     scanId: context.scanId,
     engine,
+    runId: context.runId,
     promptId: sequencePromptId(sequence.id),
     sequenceId: sequence.id,
     language: DEFAULT_LANGUAGE,
@@ -1196,6 +1198,7 @@ const buildGeoScanProjectPlan = Effect.fn("geo.buildScanProjectPlan")(
               organizationId,
               projectId: settingsRow.projectId,
               scanId,
+              runId,
               language,
               grounded: false,
             })
@@ -1325,6 +1328,7 @@ const buildGeoScanCheckContext = Effect.fn("geo.buildScanCheckContext")(
       organizationId: context.organizationId,
       projectId: context.projectId,
       scanId: context.scanId,
+      runId: context.runId,
       catalog,
       capturedAt: new Date(),
       companyName: context.companyName,
@@ -1364,6 +1368,7 @@ export const runGeoScanTaskBatch = Effect.fn("geo.runScanTaskBatch")(function* (
         projectId: context.projectId,
         scanId: context.scanId,
         engine: planned.engine,
+        runId: context.runId,
         promptId: planned.prompt.id,
         language: planned.language,
         grounded: true,
@@ -1415,6 +1420,7 @@ export const runGeoScanTaskBatch = Effect.fn("geo.runScanTaskBatch")(function* (
       projectId: context.projectId,
       scanId: context.scanId,
       engine: summary.engine,
+      runId: context.runId,
       attempted: summary.attempted,
       failed: summary.failed,
     });
@@ -1621,8 +1627,10 @@ export const finalizeGeoScanProject = Effect.fn("geo.finalizeScanProject")(
     ).pipe(
       geoSkip("scan row finish failed", {
         event: "geo.scan.stamp_failed",
+        organizationId: context.organizationId,
         projectId: context.projectId,
         scanId: context.scanId,
+        runId: context.runId,
         stamp: status,
       })
     );
@@ -1633,7 +1641,10 @@ export const finalizeGeoScanProject = Effect.fn("geo.finalizeScanProject")(
           ? markGeoScanFinished(context.projectId, claimedAt).pipe(
               geoSkip("scan finish stamp failed", {
                 event: "geo.scan.stamp_failed",
+                organizationId: context.organizationId,
                 projectId: context.projectId,
+                scanId: context.scanId,
+                runId: context.runId,
                 stamp: "finished",
               })
             )
@@ -1653,6 +1664,7 @@ export const finalizeGeoScanProject = Effect.fn("geo.finalizeScanProject")(
       checks: totals.checks,
       mentions: totals.mentions,
       droppedChecks: totals.dropped,
+      usage: totals.usage,
       durationMs: Date.now() - context.startedAtMs,
     });
     yield* flushGeoLogEffect;
@@ -2090,6 +2102,7 @@ const runGeoSequenceNowProgram = Effect.fn("geo.runSequenceNow")(function* (
           organizationId: scope.organizationId,
           projectId,
           scanId,
+          runId,
           catalog,
           capturedAt: new Date(),
           companyName: settings.companyName,
